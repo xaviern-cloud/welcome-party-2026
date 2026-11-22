@@ -7,7 +7,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 
-return Application::configure(basePath: dirname(__DIR__))
+$app = Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
@@ -15,7 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Di belakang Nginx / Railway / Render: percayai X-Forwarded-* agar HTTPS & cookie secure benar
+        // Di belakang Nginx / Vercel / Railway: percayai X-Forwarded-* agar HTTPS & cookie secure benar
         $middleware->trustProxies(at: '*');
 
         // Dijalankan di SEMUA request web (setelah StartSession), memeriksa 1 akun = 1 perangkat
@@ -34,3 +34,9 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions): void {
         //
     })->create();
+
+if (isset($_ENV['VERCEL']) || isset($_SERVER['VERCEL'])) {
+    $app->useStoragePath('/tmp/storage');
+}
+
+return $app;
