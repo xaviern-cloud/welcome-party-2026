@@ -128,6 +128,8 @@ class AdminControlController extends Controller
 
     // ================================================================ Lelang
 
+    // ================================================================ Lelang
+
     public function auction(): View
     {
         $recent = Transaction::query()
@@ -137,8 +139,9 @@ class AdminControlController extends Controller
             ->map(fn (Transaction $t) => TransactionPresenter::forAdmin($t))->values();
 
         return view('admin.auction', [
-            'recent' => $recent,
-            'frozen' => Setting::isFrozen(),
+            'recent'  => $recent,
+            'frozen'  => Setting::isFrozen(),
+            'catalog' => $this->readCatalog(),
         ]);
     }
 
@@ -183,7 +186,7 @@ class AdminControlController extends Controller
             'name'           => ['required', 'string', 'max:150'],
             'description'    => ['nullable', 'string', 'max:500'],
             'starting_price' => ['required', 'integer', 'min:0', 'max:1000000000'],
-            'image_url'      => ['nullable', 'url', 'max:500'],
+            'image_url'      => ['nullable', 'string', 'max:500'],
         ], [
             'name.required'           => 'Nama item katalog wajib diisi.',
             'starting_price.required' => 'Harga awal wajib diisi.',
@@ -205,7 +208,7 @@ class AdminControlController extends Controller
 
         return $this->done($request, "Item \"{$data['name']}\" ditambahkan ke katalog (status: Tersembunyi).", ['catalog' => $items]);
     }
-
+    
     public function catalogToggle(Request $request, string $id): JsonResponse|RedirectResponse
     {
         $items   = $this->readCatalog();
