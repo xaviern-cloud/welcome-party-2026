@@ -172,8 +172,34 @@
         </div>
 
         {{-- Riwayat Lelang Terbaru --}}
-        <div class="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-6">
-            <h2 class="mb-4 text-base font-bold text-white">Riwayat Lelang Terbaru</h2>
+        <div x-data="{ auctionExported: false }" class="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-6">
+            <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <h2 class="text-base font-bold text-white">Riwayat Lelang Terbaru</h2>
+                <div class="flex items-center gap-2">
+                    <a
+                        href="{{ route('admin.auction.export') }}"
+                        @click="auctionExported = true"
+                        class="rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1.5 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/25"
+                    >
+                        1. Export XLS
+                    </a>
+                    <form
+                        method="POST"
+                        action="{{ route('admin.auction.reset') }}"
+                        onsubmit="return confirm('Hapus seluruh riwayat transaksi lelang dan kembalikan status barang di katalog menjadi belum terjual?')"
+                    >
+                        @csrf
+                        <button
+                            type="submit"
+                            :disabled="!auctionExported"
+                            :title="auctionExported ? 'Reset riwayat lelang' : 'Klik Export XLS terlebih dahulu'"
+                            class="rounded-lg border border-red-500/40 bg-red-500/15 px-2.5 py-1.5 text-[11px] font-bold text-red-300 hover:bg-red-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            2. Reset Riwayat
+                        </button>
+                    </form>
+                </div>
+            </div>
             <template x-if="recent.length === 0">
                 <div class="py-12 text-center text-xs text-zinc-500">Belum ada transaksi pemotongan lelang.</div>
             </template>

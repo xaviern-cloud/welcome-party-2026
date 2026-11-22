@@ -173,15 +173,11 @@
                             <button type="button" @click="editing = !editing" class="text-gold-400 hover:underline">
                                 <span x-text="editing ? 'Tutup' : 'Edit'">Edit</span>
                             </button>
-                            @if(!$p->is_checked_in)
-                                <form method="POST" action="{{ route('admin.pre-event.destroy', $p->nim_code) }}" onsubmit="return confirm('Hapus {{ $p->name }} ({{ $p->nim_code }}) dari daftar?')">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button type="submit" class="text-red-400 hover:underline">Hapus</button>
-                                </form>
-                            @else
-                                <span class="text-zinc-600">Terkunci</span>
-                            @endif
+                            <form method="POST" action="{{ route('admin.pre-event.destroy', $p->nim_code) }}" onsubmit="return confirm('PERINGATAN: Hapus permanen akun {{ $p->name }} ({{ $p->nim_code }}){{ $p->is_checked_in ? ' yang SUDAH CHECK-IN' : '' }} beserta seluruh riwayat transaksinya?')">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="text-red-400 hover:underline">Hapus</button>
+                            </form>
                         </div>
                     </td>
                 </tr>

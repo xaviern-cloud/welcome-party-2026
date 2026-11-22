@@ -179,15 +179,19 @@ class PreEventScoreController extends Controller
     {
         $code = User::normalizeCode($nimCode);
         $user = User::participants()->whereKey($code)->firstOrFail();
-
-        if ($user->is_checked_in) {
-            throw new BusinessRuleException('Peserta yang sudah check-in tidak dapat dihapus.');
-        }
-
         $name = $user->name;
-        $user->delete();
 
-        return $this->done($request, "Peserta {$name} ({$code}) berhasil dihapus dari daftar.");
+        DB::transaction(function () use ($user, $code) {
+            DB::table('sessions')->where('user_id', $code)->delete();
+            DB::table('transactions')
+                ->where('sender_nim_code', $code)
+                ->orWhere('receiver_nim_code', $code)
+                ->orWhere('user_nim_code', $code)
+                ->delete();
+            $user->delete();
+        });
+
+        return $this->done($request, "Akun peserta {$name} ({$code}) beserta riwayat transaksinya berhasil dihapus.");
     }
 
     // ================================================================ Import

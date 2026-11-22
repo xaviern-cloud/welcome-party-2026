@@ -28,6 +28,12 @@
             <a href="{{ route('admin.export.balances', ['format' => 'csv']) }}" class="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-300 hover:text-white">
                 .CSV
             </a>
+            <form method="POST" action="{{ route('admin.dashboard.reset-stats') }}" onsubmit="return confirm('PERINGATAN KERAS: Seluruh Total Uang Beredar, Transfer P2P, Transaksi Lelang, dan status Check-In peserta akan direset ke 0. Lanjutkan?')">
+                @csrf
+                <button type="submit" class="rounded-xl border border-red-500/40 bg-red-500/10 px-3.5 py-2 text-xs font-bold text-red-300 hover:bg-red-500/20">
+                    ↻ Reset Saldo, Transfer & Lelang
+                </button>
+            </form>
         </div>
     </div>
 

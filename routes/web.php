@@ -46,6 +46,13 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     Route::get('/transactions', [AdminControlController::class, 'transactions'])->name('transactions');
     Route::get('/export/balances', [AdminControlController::class, 'exportBalances'])->name('export.balances');
 
+    // Reset & Hapus Data Uji Coba (dengan pengaman Export XLS)
+    Route::post('/dashboard/reset-stats', [AdminControlController::class, 'resetStats'])->name('dashboard.reset-stats');
+    Route::get('/transactions/export', [AdminControlController::class, 'exportTransactions'])->name('transactions.export');
+    Route::post('/transactions/reset', [AdminControlController::class, 'resetTransactions'])->name('transactions.reset');
+    Route::get('/auction/export', [AdminControlController::class, 'exportAuctionHistory'])->name('auction.export');
+    Route::post('/auction/reset', [AdminControlController::class, 'resetAuctionHistory'])->name('auction.reset');
+
     // Lelang (potong saldo pemenang)
     Route::get('/auction', [AdminControlController::class, 'auction'])->name('auction');
     Route::post('/auction', [AdminControlController::class, 'deductAuction'])->name('auction.deduct');

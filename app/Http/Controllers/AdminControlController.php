@@ -16,6 +16,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
+use Illuminate\Database\Eloquent\Builder;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
@@ -347,11 +348,11 @@ class AdminControlController extends Controller
     {
         $type = (string) $request->query('type', '');
         $q    = trim((string) $request->query('q', ''));
+        $from = trim((string) $request->query('from', ''));
+        $to   = trim((string) $request->query('to', ''));
 
-        $transactions = Transaction::query()
+        $transactions = $this->filteredTransactionsQuery($type, $q, $from, $to)
             ->with(['sender:nim_code,name', 'receiver:nim_code,name', 'user:nim_code,name'])
-            ->when(array_key_exists($type, TransactionPresenter::LABELS), fn ($qq) => $qq->where('type', $type))
-            ->when($q !== '', fn ($qq) => $qq->involving(User::normalizeCode($q)))
             ->latest('id')
             ->paginate(50)
             ->withQueryString()
@@ -359,7 +360,7 @@ class AdminControlController extends Controller
 
         return view('admin.transactions', [
             'transactions' => $transactions,
-            'filters'      => ['type' => $type, 'q' => $q],
+            'filters'      => ['type' => $type, 'q' => $q, 'from' => $from, 'to' => $to],
             'types'        => TransactionPresenter::LABELS,
         ]);
     }
@@ -392,6 +393,37 @@ class AdminControlController extends Controller
         })->all();
 
         return TableDownload::make($format, 'rekap-saldo-welcome-party-'.now()->format('Ymd-His'), $header, $rows);
+    }
+
+    public function exportTransactions(Request $request): StreamedResponse
+    {
+        $type = (string) $request->query('type', '');
+        $q    = trim((string) $request->query('q', ''));
+        $from = trim((string) $request->query('from', ''));
+        $to   = trim((string) $request->query('to', ''));
+
+        $rows = $this->filteredTransactionsQuery($type, $q, $from, $to)
+            ->with(['sender:nim_code,name', 'receiver:nim_code,name', 'user:nim_code,name'])
+            ->latest('id')
+            ->get()
+            ->map(function (Transaction $t) {
+                $p = TransactionPresenter::forAdmin($t);
+
+                return [
+                    $t->id,
+                    $t->created_at?->format('Y-m-d H:i:s') ?? '-',
+                    $p['label'] ?? $t->type,
+                    trim(($p['title'] ?? '').' '.($p['subtitle'] ?? '')),
+                    $t->sender_nim_code,
+                    $t->receiver_nim_code,
+                    $t->user_nim_code,
+                    (int) $t->amount,
+                ];
+            })->all();
+
+        $header = ['ID', 'Waktu (WIB)', 'Jenis', 'Keterangan', 'NIM Pengirim', 'NIM Penerima', 'NIM Terkait', 'Nominal'];
+
+        return TableDownload::make('xlsx', 'audit-transaksi-'.now()->format('Ymd-His'), $header, $rows);
     }
 
     // ================================================================ Kontrol Big Screen
@@ -441,5 +473,122 @@ class AdminControlController extends Controller
         $state = $this->bigScreen->hide();
 
         return $this->done($request, 'Layar leaderboard ditutup.', ['state' => $state]);
+    }
+
+    // ================================================================ Reset Statistik Dashboard
+
+    public function resetStats(Request $request): JsonResponse|RedirectResponse
+    {
+        DB::transaction(function () {
+            DB::table('transactions')->delete();
+            DB::table('sessions')->whereIn(
+                'user_id',
+                User::participants()->pluck('nim_code')
+            )->delete();
+
+            User::participants()->update([
+                'is_checked_in'         => false,
+                'arrival_order'         => null,
+                'checked_in_at'         => null,
+                'checked_in_by'         => null,
+                'mata_uang_dasar'       => 0,
+                'bonus_kelompok'        => 0,
+                'bonus_kecepatan_hadir' => 0,
+                'bonus_jabatan'         => 0,
+                'total_mata_uang_final' => 0,
+                'balance'               => 0,
+                'current_session_id'    => null,
+            ]);
+
+            Setting::putValue(Setting::ARRIVAL_COUNTER, 0);
+            Setting::putValue(BigScreenService::KEY_MODE, BigScreenService::MODE_HIDDEN);
+            Setting::putValue(BigScreenService::KEY_REVEALED, 0);
+        });
+
+        return $this->done(
+            $request,
+            'Total Uang Beredar, Transfer P2P, Transaksi Lelang, dan status kehadiran berhasil direset ke 0.'
+        );
+    }
+
+    public function resetTransactions(Request $request): JsonResponse|RedirectResponse
+    {
+        $type = (string) $request->input('type', '');
+        $q    = trim((string) $request->input('q', ''));
+        $from = trim((string) $request->input('from', ''));
+        $to   = trim((string) $request->input('to', ''));
+
+        $query   = $this->filteredTransactionsQuery($type, $q, $from, $to);
+        $deleted = (clone $query)->count();
+
+        if ($deleted === 0) {
+            throw new BusinessRuleException('Tidak ada data transaksi pada rentang/filter tersebut untuk direset.');
+        }
+
+        DB::transaction(fn () => $query->delete());
+
+        return $this->done(
+            $request,
+            "{$deleted} log transaksi audit berhasil dihapus setelah arsip XLS diunduh.",
+            [],
+            redirect()->route('admin.transactions', ['type' => $type, 'q' => $q, 'from' => $from, 'to' => $to])
+        );
+    }
+
+    public function exportAuctionHistory(): StreamedResponse
+    {
+        $rows = Transaction::query()
+            ->where('type', Transaction::TYPE_AUCTION)
+            ->with('user:nim_code,name,group_name')
+            ->latest('id')
+            ->get()
+            ->map(fn (Transaction $t) => [
+                $t->id,
+                $t->created_at?->format('Y-m-d H:i:s') ?? '-',
+                $t->description ?? '-',
+                $t->user_nim_code,
+                $t->user?->name ?? '-',
+                $t->user?->group_name ?? '-',
+                (int) $t->amount,
+                (int) $t->user_balance_after,
+            ])->all();
+
+        $header = ['ID', 'Waktu (WIB)', 'ID & Nama Barang', 'NIM Pemenang', 'Nama Pemenang', 'Kelompok', 'Harga Deal', 'Sisa Saldo'];
+
+        return TableDownload::make('xlsx', 'riwayat-lelang-'.now()->format('Ymd-His'), $header, $rows);
+    }
+
+    public function resetAuctionHistory(Request $request): JsonResponse|RedirectResponse
+    {
+        $deleted = Transaction::query()->where('type', Transaction::TYPE_AUCTION)->count();
+
+        DB::transaction(function () {
+            DB::table('transactions')->where('type', Transaction::TYPE_AUCTION)->delete();
+
+            // Kembalikan status TERJUAL di katalog menjadi tersedia kembali
+            $catalog = $this->readCatalog();
+            foreach ($catalog as &$c) {
+                $c['is_sold'] = false;
+                unset($c['winner_name'], $c['winner_nim'], $c['sold_price']);
+            }
+            unset($c);
+            $this->writeCatalog($catalog);
+        });
+
+        return $this->done(
+            $request,
+            "Riwayat lelang ({$deleted} transaksi) berhasil direset & status barang di katalog dikembalikan.",
+            [],
+            redirect()->route('admin.auction')
+        );
+    }
+
+    private function filteredTransactionsQuery(string $type, string $q, string $from, string $to): Builder
+    {
+        return Transaction::query()
+            ->when(array_key_exists($type, TransactionPresenter::LABELS), fn ($qq) => $qq->where('type', $type))
+            ->when($q !== '', fn ($qq) => $qq->involving(User::normalizeCode($q)))
+            ->when($from !== '', fn ($qq) => $qq->where('created_at', '>=', \Illuminate\Support\Carbon::parse($from)))
+            ->when($to !== '', fn ($qq) => $qq->where('created_at', '<=', \Illuminate\Support\Carbon::parse($to)));
     }
 }
