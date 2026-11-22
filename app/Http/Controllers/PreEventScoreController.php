@@ -104,16 +104,19 @@ class PreEventScoreController extends Controller
             $user = $target;
         }
 
-        $newPassword  = trim((string) $request->input('password', ''));
+        $newPassword  = strtoupper(trim((string) $request->input('password', '')));
         $passwordNote = '';
 
         if ($newPassword !== '') {
-         $user->forceFill([
-             'password' => Hash::make($newPassword),
-         ])->save();
+            $user->forceFill([
+                'password'       => $newPassword,
+                'password_plain' => $newPassword,
+            ])->save();
 
-         $passwordNote = " Password baru: {$newPassword}";
-     }
+            $user->resetDeviceSession();
+
+            $passwordNote = " Password baru: {$newPassword}";
+        }
 
         return $this->done(
             $request,
