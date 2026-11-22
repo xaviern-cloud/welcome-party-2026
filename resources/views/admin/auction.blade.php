@@ -10,18 +10,18 @@
     })->all();
 @endphp
 
-<div class="space-y-8">
+<div
+    x-data="auctionDesk({
+        searchUrl: '{{ route("admin.participants.search") }}',
+        deductUrl: '{{ route("admin.auction.deduct") }}',
+        recent: @js($recent),
+        catalog: @js($catalogList)
+    })"
+    x-init="init()"
+    class="space-y-8"
+>
     {{-- BAGIAN 1: POTONG SALDO PEMENANG & RIWAYAT LELANG --}}
-    <div
-        x-data="auctionDesk({
-            searchUrl: '{{ route("admin.participants.search") }}',
-            deductUrl: '{{ route("admin.auction.deduct") }}',
-            recent: @js($recent),
-            catalog: @js($catalogList)
-        })"
-        x-init="init()"
-        class="grid gap-6 lg:grid-cols-2"
-    >
+    <div class="grid gap-6 lg:grid-cols-2">
         <div class="rounded-2xl border border-gold-500/30 bg-zinc-900/80 p-6">
             <h1 class="text-xl font-bold text-gold-400">Input Pemenang Lelang</h1>
             <p class="mt-1 text-xs text-zinc-400">Pilih pemenang & barang untuk melihat kalkulasi sisa saldo secara real-time.</p>
@@ -94,7 +94,11 @@
                             >
                                 <option value="">⚡ Pilih cepat dari katalog...</option>
                                 <template x-for="c in catalog" :key="c.id">
-                                    <option :value="c.id" x-text="'[' + c.code + '] ' + c.name + ' (Open: ' + formatNum(c.starting_price) + ')'"></option>
+                                    <option
+                                        :value="c.id"
+                                        :disabled="c.is_sold"
+                                        x-text="'[' + c.code + '] ' + c.name + (c.is_sold ? ' (TERJUAL)' : ' (Open: ' + formatNum(c.starting_price) + ')')"
+                                    ></option>
                                 </template>
                             </select>
                         </template>
@@ -133,7 +137,7 @@
                 </div>
 
                 {{-- Preview Kalkulasi Real-Time --}}
-                <div x-show="winner || price > 0" x-cloak class="rounded-xl border border-zinc-800 bg-zinc-950/90 p-3.5 text-xs space-y-1.5">
+                <div x-show="winner || price > 0" x-cloak class="space-y-1.5 rounded-xl border border-zinc-800 bg-zinc-950/90 p-3.5 text-xs">
                     <div class="flex items-center justify-between text-zinc-400">
                         <span>Item Lelang</span>
                         <span class="font-semibold text-zinc-200" x-text="(itemCode ? '[' + itemCode + '] ' : '') + (item || '-')"></span>
@@ -167,6 +171,7 @@
             </form>
         </div>
 
+        {{-- Riwayat Lelang Terbaru --}}
         <div class="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-6">
             <h2 class="mb-4 text-base font-bold text-white">Riwayat Lelang Terbaru</h2>
             <template x-if="recent.length === 0">
@@ -175,11 +180,17 @@
             <div class="space-y-3">
                 <template x-for="tx in recent" :key="tx.id">
                     <div class="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-950/70 p-3.5 text-xs">
-                        <div>
-                            <div class="font-bold text-white" x-text="tx.title || tx.label"></div>
-                            <div class="text-zinc-400" x-text="tx.subtitle || tx.time"></div>
+                        <div class="min-w-0 pr-3">
+                            <div class="font-bold text-white" x-text="tx.item_label || tx.note || tx.title || tx.label || 'Item Lelang'"></div>
+                            <div class="mt-0.5 font-medium text-emerald-400">
+                                Terjual ke: <span x-text="tx.winner_text || tx.subtitle || '-'"></span>
+                            </div>
+                            <div class="mt-0.5 text-[11px] text-zinc-500" x-text="tx.time_text || tx.time || ''"></div>
                         </div>
-                        <div class="font-mono text-sm font-bold text-amber-400" x-text="'-' + formatNum(tx.amount)"></div>
+                        <div class="text-right">
+                            <div class="font-mono text-sm font-bold text-amber-400" x-text="'-' + formatNum(tx.amount)"></div>
+                            <div class="text-[10px] text-zinc-500">Coins</div>
+                        </div>
                     </div>
                 </template>
             </div>
@@ -191,7 +202,7 @@
         <div class="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-4">
             <div>
                 <h2 class="text-lg font-bold text-gold-400">Katalog Item Lelang (Reveal Control)</h2>
-                <p class="text-xs text-zinc-400">Setiap barang otomatis diberi ID unik (<strong class="font-mono text-zinc-200">BRG-01</strong>, dst.) agar tidak tertukar saat lelang.</p>
+                <p class="text-xs text-zinc-400">Setiap barang otomatis diberi ID unik (<strong class="font-mono text-zinc-200">BRG-01</strong>, dst.) dan otomatis ditandai <strong class="text-red-400">TERJUAL</strong> saat pemenang diinput.</p>
             </div>
         </div>
 
@@ -222,68 +233,89 @@
         </form>
 
         {{-- Daftar Item Katalog --}}
+        <template x-if="catalog.length === 0">
+            <div class="py-10 text-center text-xs text-zinc-500">
+                Belum ada item di katalog lelang. Tambahkan item baru menggunakan form di atas.
+            </div>
+        </template>
+
         <div class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            @forelse($catalogList as $c)
-                <div class="flex flex-col justify-between rounded-2xl border {{ !empty($c['is_revealed']) ? 'border-emerald-500/40 bg-zinc-950' : 'border-zinc-800 bg-zinc-950/50' }} p-4">
+            <template x-for="c in catalog" :key="c.id">
+                <div
+                    class="flex flex-col justify-between rounded-2xl border p-4"
+                    :class="c.is_sold ? 'border-red-500/40 bg-zinc-950/90' : (c.is_revealed ? 'border-emerald-500/40 bg-zinc-950' : 'border-zinc-800 bg-zinc-950/50')"
+                >
                     <div>
                         <div class="flex items-center justify-between gap-2">
-                            <div class="flex items-center gap-1.5">
-                                <span class="rounded bg-gold-500/20 px-2 py-0.5 font-mono text-[11px] font-extrabold text-gold-400">
-                                    {{ $c['code'] }}
-                                </span>
-                                @if(!empty($c['is_revealed']))
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                <span class="rounded bg-gold-500/20 px-2 py-0.5 font-mono text-[11px] font-extrabold text-gold-400" x-text="c.code"></span>
+                                <template x-if="c.is_sold">
+                                    <span class="rounded-full border border-red-500/40 bg-red-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-300">
+                                        TERJUAL
+                                    </span>
+                                </template>
+                                <template x-if="!c.is_sold && c.is_revealed">
                                     <span class="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
                                         DIBUKA
                                     </span>
-                                @else
+                                </template>
+                                <template x-if="!c.is_sold && !c.is_revealed">
                                     <span class="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
                                         TERSEMBUNYI
                                     </span>
-                                @endif
+                                </template>
                             </div>
 
-                            <form method="POST" action="{{ route('admin.auction.catalog.destroy', $c['id']) }}" onsubmit="return confirm('Hapus [{{ $c['code'] }}] {{ $c['name'] }} dari katalog?')">
+                            <form method="POST" :action="`{{ url('/admin/auction/catalog') }}/${c.id}`" @submit="if(!confirm(`Hapus [${c.code}] ${c.name} dari katalog?`)) $event.preventDefault()">
                                 @csrf
                                 @method('DELETE')
                                 <button type="submit" class="text-xs text-red-400 hover:underline">Hapus</button>
                             </form>
                         </div>
 
-                        @if(!empty($c['image_url']))
-                            <img src="{{ $c['image_url'] }}" alt="{{ $c['name'] }}" class="mt-3 h-32 w-full rounded-xl object-cover bg-zinc-900">
-                        @endif
+                        <template x-if="c.image_url">
+                            <img :src="c.image_url" :alt="c.name" class="mt-3 h-32 w-full rounded-xl bg-zinc-900 object-cover">
+                        </template>
 
-                        <div class="mt-3 text-base font-bold text-white">{{ $c['name'] }}</div>
-                        @if(!empty($c['description']))
-                            <p class="mt-1 text-xs text-zinc-400">{{ $c['description'] }}</p>
-                        @endif
+                        <div class="mt-3 text-base font-bold text-white" x-text="c.name"></div>
+                        <p x-show="c.description" class="mt-1 text-xs text-zinc-400" x-text="c.description"></p>
                         <div class="mt-2 font-mono text-xs font-bold text-gold-400">
-                            Open Bid: {{ number_format((int) ($c['starting_price'] ?? 0), 0, ',', '.') }} Coins
+                            Open Bid: <span x-text="formatNum(c.starting_price || 0) + ' Coins'"></span>
                         </div>
+
+                        <template x-if="c.is_sold">
+                            <div class="mt-3 rounded-xl border border-red-500/30 bg-red-950/30 px-3 py-2 text-xs">
+                                <div class="font-bold text-red-300">TERJUAL</div>
+                                <div class="mt-0.5 text-zinc-200">
+                                    Pemenang: <strong x-text="(c.winner_name || '-') + (c.winner_nim ? ' (#' + c.winner_nim + ')' : '')"></strong>
+                                </div>
+                                <div class="font-mono text-amber-400">
+                                    Harga Deal: <strong x-text="formatNum(c.sold_price || 0) + ' Coins'"></strong>
+                                </div>
+                            </div>
+                        </template>
                     </div>
 
                     <div class="mt-4 flex items-center gap-2 border-t border-zinc-800 pt-3">
-                        <form method="POST" action="{{ route('admin.auction.catalog.toggle', $c['id']) }}" class="flex-1">
+                        <form method="POST" :action="`{{ url('/admin/auction/catalog') }}/${c.id}/toggle`" class="flex-1">
                             @csrf
-                            <button type="submit" class="w-full rounded-xl {{ !empty($c['is_revealed']) ? 'border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20' : 'bg-emerald-500 text-zinc-950 hover:bg-emerald-400' }} py-2 text-xs font-bold">
-                                {{ !empty($c['is_revealed']) ? 'Sembunyikan' : 'Buka ke Peserta' }}
-                            </button>
+                            <button
+                                type="submit"
+                                class="w-full rounded-xl py-2 text-xs font-bold"
+                                :class="c.is_revealed ? 'border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20' : 'bg-emerald-500 text-zinc-950 hover:bg-emerald-400'"
+                                x-text="c.is_revealed ? 'Sembunyikan' : 'Buka ke Peserta'"
+                            ></button>
                         </form>
                         <button
                             type="button"
-                            @click="window.dispatchEvent(new CustomEvent('pick-catalog-item', { detail: { code: @js($c['code']), name: @js($c['name']), price: {{ (int) ($c['starting_price'] ?? 0) }} } }))"
-                            class="rounded-xl border border-gold-500/40 bg-zinc-900 px-3 py-2 text-xs font-bold text-gold-400 hover:bg-gold-500/15"
-                            title="Masukkan ke form pemenang lelang di atas"
-                        >
-                            Lelang →
-                        </button>
+                            @click="selectCatalogItem(c)"
+                            class="rounded-xl border px-3 py-2 text-xs font-bold"
+                            :class="c.is_sold ? 'border-zinc-700 bg-zinc-900 text-zinc-400' : 'border-gold-500/40 bg-zinc-900 text-gold-400 hover:bg-gold-500/15'"
+                            x-text="c.is_sold ? 'Terjual ✓' : 'Lelang →'"
+                        ></button>
                     </div>
                 </div>
-            @empty
-                <div class="col-span-full py-10 text-center text-xs text-zinc-500">
-                    Belum ada item di katalog lelang. Tambahkan item baru menggunakan form di atas.
-                </div>
-            @endforelse
+            </template>
         </div>
     </div>
 </div>
@@ -307,22 +339,20 @@ function auctionDesk(cfg) {
         errorMsg: '',
         idemKey: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
 
-        init() {
-            window.addEventListener('pick-catalog-item', (e) => {
-                this.itemCode = e.detail.code || '';
-                this.item = e.detail.name || '';
-                this.price = e.detail.price || '';
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-                setTimeout(() => document.getElementById('auction-price-input')?.focus(), 250);
-            });
+        init() {},
+
+        selectCatalogItem(c) {
+            this.itemCode = c.code || '';
+            this.item = c.name || '';
+            this.price = c.starting_price || '';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            setTimeout(() => document.getElementById('auction-price-input')?.focus(), 250);
         },
 
         pickFromDropdown(id) {
             const found = this.catalog.find(c => c.id === id);
             if (!found) return;
-            this.itemCode = found.code || '';
-            this.item = found.name || '';
-            this.price = found.starting_price || '';
+            this.selectCatalogItem(found);
         },
 
         selectWinner(person) {
@@ -342,7 +372,6 @@ function auctionDesk(cfg) {
                 if (res.ok) {
                     const list = (await res.json()).results || [];
                     this.results = list;
-                    // Jika mengetik tepat 3 digit NIM dan cocok 1 peserta, langsung pilih otomatis
                     if (/^\d{3}$/.test(query) && list.length === 1 && list[0].nim_code === query) {
                         this.selectWinner(list[0]);
                     }
@@ -367,6 +396,18 @@ function auctionDesk(cfg) {
                 });
                 this.successMsg = res.message;
                 this.recent.unshift(res.transaction);
+
+                // Langsung tandai TERJUAL di kartu katalog bawah secara real-time
+                if (res.sold_code) {
+                    const target = this.catalog.find(c => (c.code || '').toUpperCase() === res.sold_code.toUpperCase());
+                    if (target) {
+                        target.is_sold = true;
+                        target.winner_name = res.winner_name;
+                        target.winner_nim = res.winner_nim;
+                        target.sold_price = res.sold_price;
+                    }
+                }
+
                 this.winner = null;
                 this.itemCode = '';
                 this.item = '';

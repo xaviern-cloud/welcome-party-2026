@@ -136,7 +136,17 @@ class AdminControlController extends Controller
             ->where('type', Transaction::TYPE_AUCTION)
             ->with('user:nim_code,name')
             ->latest('id')->limit(15)->get()
-            ->map(fn (Transaction $t) => TransactionPresenter::forAdmin($t))->values();
+            ->map(function (Transaction $t) {
+                $base   = TransactionPresenter::forAdmin($t);
+                $winner = $t->user ? "{$t->user->name} (#{$t->user_nim_code})" : "#{$t->user_nim_code}";
+                $item   = $t->note ?? $t->description ?? ($base['title'] ?? 'Item Lelang');
+
+                return array_merge($base, [
+                    'item_label'  => $item,
+                    'winner_text' => $winner,
+                    'time_text'   => $t->created_at?->format('d/m/Y H:i:s') ?? ($base['time'] ?? ''),
+                ]);
+            })->values();
 
         return view('admin.auction', [
             'recent'  => $recent,
@@ -160,7 +170,7 @@ class AdminControlController extends Controller
             'item.required'   => 'Keterangan item lelang wajib diisi.',
         ]);
 
-        $itemCode  = trim((string) ($data['item_code'] ?? ''));
+        $itemCode  = strtoupper(trim((string) ($data['item_code'] ?? '')));
         $itemTitle = trim($data['item']);
         $fullLabel = ($itemCode !== '' && ! str_starts_with($itemTitle, "[{$itemCode}]"))
             ? "[{$itemCode}] {$itemTitle}"
@@ -176,12 +186,44 @@ class AdminControlController extends Controller
 
         $tx->loadMissing('user:nim_code,name');
 
-        $message = "Potongan lelang berhasil ({$fullLabel}): {$tx->user->name} ({$tx->user_nim_code}) -"
+        // Tandai barang di katalog sebagai TERJUAL beserta nama pemenang & harga deal
+        if ($itemCode !== '') {
+            $catalog = $this->readCatalog();
+            $updated = false;
+            foreach ($catalog as &$c) {
+                if (strtoupper((string) ($c['code'] ?? '')) === $itemCode) {
+                    $c['is_sold']     = true;
+                    $c['winner_name'] = $tx->user?->name ?? 'Peserta';
+                    $c['winner_nim']  = $tx->user_nim_code;
+                    $c['sold_price']  = (int) $tx->amount;
+                    $updated          = true;
+                    break;
+                }
+            }
+            unset($c);
+
+            if ($updated) {
+                $this->writeCatalog($catalog);
+            }
+        }
+
+        $winnerText = $tx->user ? "{$tx->user->name} (#{$tx->user_nim_code})" : "#{$tx->user_nim_code}";
+        $txPayload  = array_merge(TransactionPresenter::forAdmin($tx), [
+            'item_label'  => $fullLabel,
+            'winner_text' => $winnerText,
+            'time_text'   => $tx->created_at?->format('d/m/Y H:i:s') ?? now()->format('d/m/Y H:i:s'),
+        ]);
+
+        $message = "Potongan lelang berhasil ({$fullLabel}): {$winnerText} -"
             .$this->formatNumber($tx->amount).'. Sisa saldo: '.$this->formatNumber((int) $tx->user_balance_after).'.';
 
         return $this->done($request, $message, [
-            'transaction' => TransactionPresenter::forAdmin($tx),
+            'transaction' => $txPayload,
             'balance'     => $tx->user_balance_after,
+            'sold_code'   => $itemCode,
+            'winner_name' => $tx->user?->name ?? 'Peserta',
+            'winner_nim'  => $tx->user_nim_code,
+            'sold_price'  => (int) $tx->amount,
         ], redirect()->route('admin.auction'));
     }
 

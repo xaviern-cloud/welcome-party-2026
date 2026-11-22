@@ -40,18 +40,47 @@
 
     <div class="grid gap-4 sm:grid-cols-2">
         <template x-for="(item, idx) in items" :key="item.id">
-            <div class="overflow-hidden rounded-2xl border border-gold-500/30 bg-zinc-900/90 shadow-lg">
+            <div
+                class="overflow-hidden rounded-2xl border bg-zinc-900/90 shadow-lg"
+                :class="item.is_sold ? 'border-red-500/40' : 'border-gold-500/30'"
+            >
                 <template x-if="item.image_url">
-                    <img :src="item.image_url" :alt="item.name" class="h-44 w-full object-cover bg-zinc-950">
+                    <img :src="item.image_url" :alt="item.name" class="h-44 w-full bg-zinc-950 object-cover">
                 </template>
                 <div class="p-4">
-                    <span class="inline-block rounded bg-gold-500/20 px-2 py-0.5 font-mono text-[11px] font-extrabold text-gold-400" x-text="item.code || ('BRG-' + String(idx + 1).padStart(2, '0'))"></span>
-                    <div class="mt-1.5 text-base font-bold text-white" x-text="item.name"></div>
-                    <p x-show="item.description" class="mt-1 text-xs text-zinc-400" x-text="item.description"></p>
-                    <div class="mt-4 flex items-center justify-between border-t border-zinc-800 pt-3">
-                        <span class="text-[11px] uppercase tracking-wider text-zinc-500">Open Bid</span>
-                        <span class="font-mono text-sm font-extrabold text-gold-400" x-text="new Intl.NumberFormat('id-ID').format(item.starting_price || 0) + ' Coins'"></span>
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="inline-block rounded bg-gold-500/20 px-2 py-0.5 font-mono text-[11px] font-extrabold text-gold-400" x-text="item.code || ('BRG-' + String(idx + 1).padStart(2, '0'))"></span>
+                        <template x-if="item.is_sold">
+                            <span class="rounded-full border border-red-500/40 bg-red-500/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-300">
+                                TERJUAL
+                            </span>
+                        </template>
                     </div>
+
+                    <div class="mt-2 text-base font-bold text-white" x-text="item.name"></div>
+                    <p x-show="item.description" class="mt-1 text-xs text-zinc-400" x-text="item.description"></p>
+
+                    {{-- Jika SUDAH TERJUAL --}}
+                    <template x-if="item.is_sold">
+                        <div class="mt-4 space-y-1.5 rounded-xl border border-red-500/30 bg-red-950/30 p-3 text-xs">
+                            <div class="flex items-center justify-between text-zinc-400">
+                                <span>Terjual Kepada</span>
+                                <span class="font-bold text-white" x-text="(item.winner_name || 'Pemenang') + (item.winner_nim ? ' (#' + item.winner_nim + ')' : '')"></span>
+                            </div>
+                            <div class="flex items-center justify-between border-t border-red-500/20 pt-1.5">
+                                <span class="text-zinc-400">Harga Deal</span>
+                                <span class="font-mono text-sm font-extrabold text-amber-400" x-text="new Intl.NumberFormat('id-ID').format(item.sold_price || 0) + ' Coins'"></span>
+                            </div>
+                        </div>
+                    </template>
+
+                    {{-- Jika BELUM TERJUAL --}}
+                    <template x-if="!item.is_sold">
+                        <div class="mt-4 flex items-center justify-between border-t border-zinc-800 pt-3">
+                            <span class="text-[11px] uppercase tracking-wider text-zinc-500">Open Bid</span>
+                            <span class="font-mono text-sm font-extrabold text-gold-400" x-text="new Intl.NumberFormat('id-ID').format(item.starting_price || 0) + ' Coins'"></span>
+                        </div>
+                    </template>
                 </div>
             </div>
         </template>
