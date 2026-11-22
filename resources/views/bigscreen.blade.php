@@ -1,136 +1,232 @@
-<!DOCTYPE html>
-<html lang="id" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Leaderboard — {{ $event }}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800;900&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
-    <style>
-        [x-cloak] { display: none !important; }
-        body {
-            background: radial-gradient(circle at 50% 0%, #271c08 0%, #09090b 65%);
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            overflow-x: hidden;
+<?php
+
+namespace App\Services;
+
+use App\Exceptions\BusinessRuleException;
+use App\Models\Setting;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+/**
+ * Leaderboard Reveal untuk layar proyektor.
+ *
+ * Saat diaktifkan, Top N (berdasarkan saldo saat itu) disimpan sebagai SNAPSHOT di settings.
+ * Reveal hanya membuka snapshot itu satu per satu dari peringkat terbawah (#N) ke #1, sehingga
+ * transfer yang masuk di tengah reveal tidak mengacak peringkat. Endpoint publik TIDAK PERNAH
+ * mengirim peringkat yang belum di-reveal.
+ */
+class BigScreenService
+{
+    public const KEY_MODE     = 'bigscreen_mode';
+    public const KEY_REVEALED = 'bigscreen_revealed_count';
+    public const KEY_SNAPSHOT = 'bigscreen_snapshot';
+
+    public const MODE_HIDDEN      = 'hidden';
+    public const MODE_LEADERBOARD = 'leaderboard';
+
+    // ================================================================ Tampilan
+
+    /** State untuk /api/big-screen/state (publik, hanya yang sudah di-reveal). */
+    public function publicState(): array
+    {
+        $s      = $this->read();
+        $active = $this->isActive($s);
+
+        if (! $active) {
+            return [
+                'mode'           => self::MODE_HIDDEN,
+                'snapshot_id'    => null,
+                'total'          => 0,
+                'revealed_count' => 0,
+                'latest_rank'    => null,
+                'entries'        => [],
+            ];
         }
-        .font-display { font-family: 'Cinzel', serif; }
-        @keyframes revealPop {
-            0% { opacity: 0; transform: scale(0.92) translateY(18px); }
-            100% { opacity: 1; transform: scale(1) translateY(0); }
+
+        $all      = $s['snapshot']['entries'];            // urut peringkat 1..N
+        $total    = count($all);
+        $revealed = min($s['revealed'], $total);
+        $showBal  = (bool) ($s['snapshot']['show_balance'] ?? true);
+
+        // Urutan reveal: N, N-1, ..., sehingga yang terbuka adalah K entri terakhir dari daftar
+        $visible = $revealed > 0 ? array_slice($all, $total - $revealed) : [];
+
+        return [
+            'mode'           => self::MODE_LEADERBOARD,
+            'snapshot_id'    => $s['snapshot']['id'],
+            'total'          => $total,
+            'revealed_count' => $revealed,
+            'latest_rank'    => $revealed > 0 ? $total - $revealed + 1 : null,
+            'entries'        => array_map(fn (array $e) => [
+                'rank'    => $e['rank'],
+                'name'    => $e['name'],
+                'group'   => $e['group'],
+                'balance' => $showBal ? $e['balance'] : null,
+            ], $visible),
+        ];
+    }
+
+    /** State untuk panel kontrol Admin (termasuk peringkat yang belum di-reveal). */
+    public function adminState(): array
+    {
+        $s      = $this->read();
+        $active = $this->isActive($s);
+        $total  = $active ? count($s['snapshot']['entries']) : 0;
+        $rev    = $active ? min($s['revealed'], $total) : 0;
+
+        $entries = [];
+
+        if ($active) {
+            foreach ($s['snapshot']['entries'] as $e) {
+                $entries[] = $e + ['revealed' => $e['rank'] > $total - $rev];
+            }
         }
-        .animate-reveal { animation: revealPop 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-    </style>
-</head>
-<body class="min-h-screen text-white">
 
-<div
-    x-data="bigScreenApp('{{ $stateUrl }}', {{ (int) $pollMs }})"
-    x-init="init()"
-    class="mx-auto flex min-h-screen max-w-6xl flex-col justify-between px-8 py-8"
->
-    {{-- Header --}}
-    <header class="text-center">
-        <div class="inline-block rounded-full border border-amber-500/40 bg-amber-500/10 px-4 py-1 text-xs font-bold uppercase tracking-[0.25em] text-amber-300">
-            {{ $tagline }}
-        </div>
-        <h1 class="font-display mt-3 text-4xl font-black tracking-wider text-amber-400 drop-shadow md:text-5xl">
-            {{ $event }}
-        </h1>
-    </header>
+        return [
+            'mode'           => $active ? self::MODE_LEADERBOARD : self::MODE_HIDDEN,
+            'active'         => $active,
+            'snapshot_id'    => $active ? $s['snapshot']['id'] : null,
+            'taken_at'       => $active ? ($s['snapshot']['taken_at'] ?? null) : null,
+            'show_balance'   => $active ? (bool) ($s['snapshot']['show_balance'] ?? true) : true,
+            'total'          => $total,
+            'revealed_count' => $rev,
+            'next_rank'      => $active && $rev < $total ? $total - $rev : null,
+            'finished'       => $active && $total > 0 && $rev >= $total,
+            'default_size'   => $s['default_size'],
+            'entries'        => $entries,
+        ];
+    }
 
-    {{-- Mode Standby (Belum Diaktifkan Panitia) --}}
-    <template x-if="!state.active">
-        <div class="my-auto py-16 text-center">
-            <div class="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-3xl border border-amber-500/40 bg-amber-500/10 font-display text-5xl font-black text-amber-400 shadow-2xl shadow-amber-500/20">
-                W
-            </div>
-            <h2 class="font-display text-3xl font-bold tracking-widest text-zinc-200 md:text-4xl">
-                LIVE AUCTION & LEADERBOARD
-            </h2>
-            <p class="mt-3 text-lg text-zinc-400">Menunggu pengumuman resmi dari panggung utama...</p>
-        </div>
-    </template>
+    // ================================================================ Kontrol
 
-    {{-- Mode Leaderboard Aktif --}}
-    <template x-if="state.active">
-        <div class="my-6 flex-1">
-            <div class="mb-5 flex items-center justify-between border-b border-zinc-800 pb-3">
-                <span class="text-sm font-bold uppercase tracking-widest text-amber-400">
-                    TOP <span x-text="state.total"></span> SULTAN LEADERBOARD
-                </span>
-                <span class="font-mono text-sm text-zinc-400">
-                    Terungkap: <strong class="text-white" x-text="state.revealed_count"></strong> / <span x-text="state.total"></span>
-                </span>
-            </div>
+    /** Ambil snapshot Top N baru dan buka mode leaderboard dengan 0 peringkat terbuka. */
+    public function activate(?int $size = null, bool $showBalance = true): array
+    {
+        return DB::transaction(function () use ($size, $showBalance) {
+            $this->lockState();
 
-            <template x-if="(state.entries || []).length === 0">
-                <div class="py-20 text-center font-display text-2xl tracking-widest text-zinc-500">
-                    BERSIAP UNTUK HITUNG MUNDUR PERINGKAT #<span x-text="state.total"></span>...
-                </div>
-            </template>
+            $size = $size ?? max(1, (int) Setting::getValue('leaderboard_size', '10'));
 
-            <div class="grid gap-3">
-                <template x-for="row in (state.entries || [])" :key="row.rank">
-                    <div
-                        class="animate-reveal flex items-center justify-between rounded-2xl border px-6 py-4 shadow-xl"
-                        :class="{
-                            'border-amber-400 bg-gradient-to-r from-amber-500/25 via-zinc-900 to-amber-500/20 scale-[1.01]': row.rank === 1,
-                            'border-zinc-400/60 bg-zinc-900/90': row.rank === 2,
-                            'border-amber-700/60 bg-zinc-900/85': row.rank === 3,
-                            'border-zinc-800 bg-zinc-900/70': row.rank > 3
-                        }"
-                    >
-                        <div class="flex items-center gap-5">
-                            <div
-                                class="flex h-12 w-12 items-center justify-center rounded-xl font-display text-xl font-black"
-                                :class="{
-                                    'bg-amber-400 text-black': row.rank === 1,
-                                    'bg-zinc-300 text-black': row.rank === 2,
-                                    'bg-amber-700 text-white': row.rank === 3,
-                                    'bg-zinc-800 text-amber-400': row.rank > 3
-                                }"
-                                x-text="'#' + row.rank"
-                            ></div>
-                            <div>
-                                <div class="text-xl font-extrabold text-white md:text-2xl" x-text="row.name"></div>
-                                <div class="font-mono text-xs uppercase tracking-wider text-zinc-400">
-                                    NIM #<span x-text="row.nim_code"></span> • <span x-text="row.group_name || 'Peserta'"></span>
-                                </div>
-                            </div>
-                        </div>
+            $top = User::participants()->checkedIn()
+                ->orderByDesc('balance')
+                ->orderBy('arrival_order')
+                ->limit($size)
+                ->get(['nim_code', 'name', 'group_name', 'balance']);
 
-                        <div x-show="state.show_balance" class="text-right">
-                            <div class="font-display text-2xl font-black text-amber-400 md:text-3xl" x-text="new Intl.NumberFormat('id-ID').format(row.balance || 0)"></div>
-                            <div class="text-[11px] font-bold uppercase tracking-widest text-zinc-500">COINS</div>
-                        </div>
-                    </div>
-                </template>
-            </div>
-        </div>
-    </template>
+            if ($top->isEmpty()) {
+                throw new BusinessRuleException('Belum ada peserta yang check-in, leaderboard belum bisa diaktifkan.', 409);
+            }
 
-    <footer class="text-center text-xs tracking-widest text-zinc-600">
-        WELCOME PARTY CURRENCY & AUCTION SYSTEM
-    </footer>
-</div>
+            $entries = $top->values()->map(fn (User $u, int $i) => [
+                'rank'     => $i + 1,
+                'nim_code' => $u->nim_code,
+                'name'     => $u->name,
+                'group'    => $u->group_name,
+                'balance'  => (int) $u->balance,
+            ])->all();
 
-<script>
-function bigScreenApp(url, pollMs) {
-    return {
-        state: { active: false, total: 10, revealed_count: 0, show_balance: true, entries: [] },
-        init() {
-            const load = async () => {
-                try {
-                    const res = await fetch(url, { cache: 'no-store' });
-                    if (res.ok) this.state = await res.json();
-                } catch (e) {}
-            };
-            load();
-            setInterval(load, pollMs);
+            $snapshot = [
+                'id'           => (string) Str::uuid(),
+                'taken_at'     => now()->toIso8601String(),
+                'show_balance' => $showBalance,
+                'entries'      => $entries,
+            ];
+
+            Setting::putValue(self::KEY_SNAPSHOT, json_encode($snapshot, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+            Setting::putValue(self::KEY_REVEALED, 0);
+            Setting::putValue(self::KEY_MODE, self::MODE_LEADERBOARD);
+
+            return $this->adminState();
+        }, 3);
+    }
+
+    /**
+     * Buka satu peringkat berikutnya (#N lalu turun ke #1).
+     * Jika $expectedRevealed diberikan dan tidak sama dengan kondisi sebenarnya (klik ganda / panel basi),
+     * tidak ada yang berubah dan 'changed' bernilai false.
+     *
+     * @return array{changed:bool, state:array}
+     */
+    public function revealNext(?int $expectedRevealed = null): array
+    {
+        return DB::transaction(function () use ($expectedRevealed) {
+            $this->lockState();
+            $s = $this->read();
+
+            if (! $this->isActive($s)) {
+                throw new BusinessRuleException('Mode leaderboard belum diaktifkan.', 409);
+            }
+
+            $total = count($s['snapshot']['entries']);
+
+            if ($expectedRevealed !== null && $expectedRevealed !== $s['revealed']) {
+                return ['changed' => false, 'state' => $this->adminState()];
+            }
+
+            if ($s['revealed'] >= $total) {
+                throw new BusinessRuleException('Semua peringkat sudah ditampilkan.', 409);
+            }
+
+            Setting::putValue(self::KEY_REVEALED, $s['revealed'] + 1);
+
+            return ['changed' => true, 'state' => $this->adminState()];
+        }, 3);
+    }
+
+    /** Tutup layar leaderboard (proyektor kembali ke layar tunggu). */
+    public function hide(): array
+    {
+        return DB::transaction(function () {
+            $this->lockState();
+            Setting::putValue(self::KEY_MODE, self::MODE_HIDDEN);
+
+            return $this->adminState();
+        }, 3);
+    }
+
+    // ================================================================ Internal
+
+    /** Mutex semua operasi big screen: baris settings 'bigscreen_mode'. Wajib di dalam transaksi. */
+    private function lockState(): void
+    {
+        DB::table('settings')->insertOrIgnore([
+            'key'        => self::KEY_MODE,
+            'value'      => self::MODE_HIDDEN,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Setting::query()->whereKey(self::KEY_MODE)->lockForUpdate()->first();
+    }
+
+    /** @return array{mode:string, revealed:int, snapshot:?array, default_size:int} */
+    private function read(): array
+    {
+        $rows = Setting::query()
+            ->whereIn('key', [self::KEY_MODE, self::KEY_REVEALED, self::KEY_SNAPSHOT, 'leaderboard_size'])
+            ->pluck('value', 'key');
+
+        $snapshot = null;
+
+        if (! empty($rows[self::KEY_SNAPSHOT])) {
+            $decoded = json_decode($rows[self::KEY_SNAPSHOT], true);
+
+            if (is_array($decoded) && isset($decoded['id'], $decoded['entries']) && is_array($decoded['entries'])) {
+                $snapshot = $decoded;
+            }
         }
-    };
+
+        return [
+            'mode'         => $rows[self::KEY_MODE] ?? self::MODE_HIDDEN,
+            'revealed'     => (int) ($rows[self::KEY_REVEALED] ?? 0),
+            'snapshot'     => $snapshot,
+            'default_size' => max(1, (int) ($rows['leaderboard_size'] ?? 10)),
+        ];
+    }
+
+    private function isActive(array $s): bool
+    {
+        return $s['mode'] === self::MODE_LEADERBOARD && $s['snapshot'] !== null;
+    }
 }
-</script>
-</body>
-</html>
