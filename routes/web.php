@@ -14,8 +14,9 @@ Route::middleware('guest')->group(function () {
     Route::post('/login', [AuthController::class, 'login'])->name('login.attempt');
 });
 
-// Layar proyektor: publik & tanpa session (data diambil dari /api/big-screen/state, lihat routes/api.php)
+// Layar proyektor: publik & tanpa session
 Route::get('/big-screen', [BigScreenController::class, 'show'])->name('bigscreen');
+Route::get('/big-screen/state', [BigScreenController::class, 'state'])->name('bigscreen.public-state');
 
 // ---------------------------------------------------------------- Terautentikasi
 Route::middleware('auth')->group(function () {
@@ -54,7 +55,6 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     Route::post('/bigscreen/reveal', [AdminControlController::class, 'bigScreenReveal'])->name('bigscreen.reveal');
     Route::post('/bigscreen/hide', [AdminControlController::class, 'bigScreenHide'])->name('bigscreen.hide');
 
-    // Pra-acara: peserta, skor, rumus
     // Pra-acara: peserta, skor, rumus
     Route::get('/pre-event', [PreEventScoreController::class, 'index'])->name('pre-event.index');
     Route::post('/pre-event/participants', [PreEventScoreController::class, 'store'])->name('pre-event.store');

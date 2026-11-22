@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\BusinessRuleException;
+use App\Models\Setting;
 use App\Models\User;
 use App\Services\ParticipantImportParser;
 use App\Services\ParticipantSearch;
@@ -16,7 +17,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
-use Illuminate\Support\Facades\Hash;
 
 class PreEventScoreController extends Controller
 {
@@ -66,7 +66,7 @@ class PreEventScoreController extends Controller
         return view('admin.pre-event.index', [
             'participants' => $participants,
             'groupSummary' => $this->scores->groupSummary(),
-            'formula'      => \App\Models\Setting::formula(),
+            'formula'      => Setting::formula(),
             'groups'       => User::participants()->whereNotNull('group_name')->distinct()->orderBy('group_name')->pluck('group_name'),
             'stats'        => [
                 'total'      => User::participants()->count(),
@@ -90,22 +90,54 @@ class PreEventScoreController extends Controller
     public function update(Request $request, string $nimCode): JsonResponse|RedirectResponse
     {
         $request->validate([
-            'password' => ['nullable', 'string', 'min:4', 'max:64'],
+            'poin_inisialisasi' => ['nullable', 'numeric', 'min:0'],
+            'password'          => ['nullable', 'string', 'min:4', 'max:64'],
         ], [
             'password.min' => 'Password baru minimal 4 karakter.',
         ]);
 
         $code   = User::normalizeCode($nimCode);
         $target = User::participants()->whereKey($code)->firstOrFail();
+        $notes  = [];
 
         if (! $target->is_checked_in) {
             $user = $this->scores->updateParticipant($nimCode, $request->only(self::UPDATE_FIELDS));
         } else {
             $user = $target;
+
+            if ($request->filled('poin_inisialisasi')) {
+                $newPoin = round((float) $request->input('poin_inisialisasi'), 2);
+                $oldPoin = round((float) $user->poin_inisialisasi, 2);
+
+                if ($newPoin !== $oldPoin) {
+                    $formula  = Setting::formula();
+                    $newDasar = (int) round($newPoin * (float) $formula['multiplier_poin']);
+                    $oldTotal = (int) ($user->total_mata_uang_final ?? 0);
+                    $newTotal = $newDasar
+                        + (int) $user->bonus_kelompok
+                        + (int) $user->bonus_kecepatan_hadir
+                        + (int) $user->bonus_jabatan;
+
+                    $diff       = $newTotal - $oldTotal;
+                    $newBalance = (int) $user->balance + $diff;
+
+                    if ($newBalance < 0) {
+                        throw new BusinessRuleException('Pengurangan poin melebihi sisa saldo aktif peserta saat ini.');
+                    }
+
+                    $user->forceFill([
+                        'poin_inisialisasi'     => $newPoin,
+                        'mata_uang_dasar'       => $newDasar,
+                        'total_mata_uang_final' => $newTotal,
+                        'balance'               => $newBalance,
+                    ])->save();
+
+                    $notes[] = 'Poin & saldo diperbarui (' . ($diff >= 0 ? '+' : '') . $this->formatNumber($diff) . ' coins).';
+                }
+            }
         }
 
-        $newPassword  = strtoupper(trim((string) $request->input('password', '')));
-        $passwordNote = '';
+        $newPassword = strtoupper(trim((string) $request->input('password', '')));
 
         if ($newPassword !== '') {
             $user->forceFill([
@@ -115,12 +147,14 @@ class PreEventScoreController extends Controller
 
             $user->resetDeviceSession();
 
-            $passwordNote = " Password baru: {$newPassword}";
+            $notes[] = "Password baru: {$newPassword}";
         }
+
+        $extra = $notes === [] ? '' : ' ' . implode(' ', $notes);
 
         return $this->done(
             $request,
-            "Data {$user->name} ({$user->nim_code}) diperbarui.{$passwordNote}",
+            "Data {$user->name} ({$user->nim_code}) diperbarui.{$extra}",
             ['participant' => $this->payload($user)]
         );
     }
@@ -178,7 +212,6 @@ class PreEventScoreController extends Controller
         $file   = $request->file('file');
         $parsed = $parser->parse((string) $file->getRealPath(), $file->getClientOriginalExtension(), $request->input('sheet'));
 
-        // Dry-run memakai logika import yang sama persis, lalu seluruh perubahan dibatalkan
         DB::beginTransaction();
 
         try {

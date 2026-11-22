@@ -101,7 +101,7 @@
             </div>
             <div>
                 <label class="mb-1 block text-xs text-zinc-400">Poin Inisialisasi</label>
-                <input type="number" name="poin_inisialisasi" min="0" value="0" required class="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-xs text-white">
+                <input type="number" name="poin_inisialisasi" min="0" step="0.01" value="0" required class="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-xs text-white">
             </div>
             <div class="flex justify-end sm:col-span-2 lg:col-span-4">
                 <button type="submit" class="rounded-xl bg-emerald-500 px-5 py-2 text-xs font-bold text-zinc-950 hover:bg-emerald-400">
@@ -196,7 +196,7 @@
                                 <option value="BUKAN" {{ $p->jabatan !== 'KETUA' ? 'selected' : '' }}>Anggota</option>
                                 <option value="KETUA" {{ $p->jabatan === 'KETUA' ? 'selected' : '' }}>KETUA</option>
                             </select>
-                            <input type="number" name="poin_inisialisasi" value="{{ $p->poin_inisialisasi }}" min="0" {{ $p->is_checked_in ? 'readonly' : '' }} class="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 font-mono text-xs text-white">
+                            <input type="number" name="poin_inisialisasi" value="{{ $p->poin_inisialisasi }}" min="0" step="0.01" class="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 font-mono text-xs text-white">
                             <input type="text" name="password" minlength="4" placeholder="Password baru (opsional)" class="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 font-mono text-xs text-amber-300 placeholder:text-zinc-500 sm:col-span-2">
                             <button type="submit" class="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-zinc-950 hover:bg-emerald-400">Simpan</button>
                         </form>

@@ -18,11 +18,11 @@ class User extends Authenticatable
     /** Karakter password: uppercase + angka, tanpa karakter yang mudah tertukar (0 O 1 I). */
     private const PASSWORD_CHARSET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-    /** Kolom yang terkunci permanen begitu peserta check-in. */
+    /** Kolom kehadiran/kelompok/jabatan yang terkunci setelah check-in (poin kini bisa direvisi admin). */
     public const LOCKED_AFTER_CHECK_IN = [
-        'poin_inisialisasi', 'group_name', 'jabatan',
-        'rata_rata_kelompok', 'mata_uang_dasar', 'bonus_kelompok',
-        'bonus_kecepatan_hadir', 'bonus_jabatan', 'total_mata_uang_final',
+        'group_name', 'jabatan',
+        'rata_rata_kelompok', 'bonus_kelompok',
+        'bonus_kecepatan_hadir', 'bonus_jabatan',
         'is_checked_in', 'arrival_order', 'checked_in_at', 'checked_in_by',
     ];
 
@@ -60,7 +60,6 @@ class User extends Authenticatable
 
     protected static function booted(): void
     {
-        // Aturan Kunci Permanen: setelah check-in, kolom skor/jabatan/kehadiran tidak boleh berubah.
         static::updating(function (User $user) {
             if (! $user->getOriginal('is_checked_in')) {
                 return;
@@ -164,10 +163,6 @@ class User extends Authenticatable
         return Hash::check($candidate, $this->password);
     }
 
-    /**
-     * Tombol "Reset Device Session" (Admin): hapus semua sesi user ini dan kosongkan
-     * current_session_id, sehingga peserta bisa login dari HP/browser baru.
-     */
     public function resetDeviceSession(): void
     {
         DB::transaction(function () {
