@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Illuminate\Support\Facades\Hash;
 
 class PreEventScoreController extends Controller
 {
@@ -107,12 +108,12 @@ class PreEventScoreController extends Controller
         $passwordNote = '';
 
         if ($newPassword !== '') {
-            $user->forceFill([
-                'password' => $newPassword,
-            ])->save();
+         $user->forceFill([
+             'password' => Hash::make($newPassword),
+         ])->save();
 
-            $passwordNote = " Password baru: {$newPassword}";
-        }
+         $passwordNote = " Password baru: {$newPassword}";
+     }
 
         return $this->done(
             $request,
