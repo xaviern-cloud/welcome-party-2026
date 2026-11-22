@@ -114,9 +114,6 @@ class PreEventScoreController extends Controller
             $passwordNote = " Password baru: {$newPassword}";
         }
 
-            $passwordNote = " Password baru: {$newPassword}";
-        }
-
         return $this->done(
             $request,
             "Data {$user->name} ({$user->nim_code}) diperbarui.{$passwordNote}",
