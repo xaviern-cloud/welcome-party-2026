@@ -108,9 +108,11 @@ class PreEventScoreController extends Controller
 
         if ($newPassword !== '') {
             $user->forceFill([
-                'password'          => $newPassword,
-                'active_session_id' => null,
+                'password' => $newPassword,
             ])->save();
+
+            $passwordNote = " Password baru: {$newPassword}";
+        }
 
             $passwordNote = " Password baru: {$newPassword}";
         }
