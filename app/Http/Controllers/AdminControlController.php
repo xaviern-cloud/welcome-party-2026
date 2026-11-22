@@ -175,6 +175,109 @@ class AdminControlController extends Controller
         ], redirect()->route('admin.auction'));
     }
 
+    // ================================================================ Katalog Lelang (Buka / Sembunyikan)
+
+    public function catalogStore(Request $request): JsonResponse|RedirectResponse
+    {
+        $data = $request->validate([
+            'name'           => ['required', 'string', 'max:150'],
+            'description'    => ['nullable', 'string', 'max:500'],
+            'starting_price' => ['required', 'integer', 'min:0', 'max:1000000000'],
+            'image_url'      => ['nullable', 'url', 'max:500'],
+        ], [
+            'name.required'           => 'Nama item katalog wajib diisi.',
+            'starting_price.required' => 'Harga awal wajib diisi.',
+        ]);
+
+        $items   = $this->readCatalog();
+        $items[] = [
+            'id'             => (string) \Illuminate\Support\Str::uuid(),
+            'name'           => trim($data['name']),
+            'description'    => trim((string) ($data['description'] ?? '')),
+            'starting_price' => (int) $data['starting_price'],
+            'image_url'      => trim((string) ($data['image_url'] ?? '')),
+            'is_revealed'    => false,
+            'is_sold'        => false,
+            'created_at'     => now()->toIso8601String(),
+        ];
+
+        $this->writeCatalog($items);
+
+        return $this->done($request, "Item \"{$data['name']}\" ditambahkan ke katalog (status: Tersembunyi).", ['catalog' => $items]);
+    }
+
+    public function catalogToggle(Request $request, string $id): JsonResponse|RedirectResponse
+    {
+        $items   = $this->readCatalog();
+        $found   = false;
+        $label   = '';
+        $visible = false;
+
+        foreach ($items as &$item) {
+            if (($item['id'] ?? '') === $id) {
+                $item['is_revealed'] = ! (bool) ($item['is_revealed'] ?? false);
+                $visible             = $item['is_revealed'];
+                $label               = $item['name'] ?? 'Item';
+                $found               = true;
+                break;
+            }
+        }
+        unset($item);
+
+        if (! $found) {
+            throw new BusinessRuleException('Item katalog tidak ditemukan.', 404);
+        }
+
+        $this->writeCatalog($items);
+
+        return $this->done(
+            $request,
+            $visible ? "Item \"{$label}\" DIBUKA untuk peserta." : "Item \"{$label}\" DISEMBUNYIKAN dari peserta.",
+            ['catalog' => $items]
+        );
+    }
+
+    public function catalogDestroy(Request $request, string $id): JsonResponse|RedirectResponse
+    {
+        $items = array_values(array_filter(
+            $this->readCatalog(),
+            fn (array $item) => ($item['id'] ?? '') !== $id
+        ));
+
+        $this->writeCatalog($items);
+
+        return $this->done($request, 'Item katalog dihapus.', ['catalog' => $items]);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    public static function getCatalogItems(bool $onlyRevealed = false): array
+    {
+        $raw   = Setting::getValue('auction_catalog_items', '[]');
+        $items = json_decode((string) $raw, true);
+
+        if (! is_array($items)) {
+            return [];
+        }
+
+        if ($onlyRevealed) {
+            return array_values(array_filter($items, fn (array $i) => (bool) ($i['is_revealed'] ?? false)));
+        }
+
+        return array_values($items);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function readCatalog(): array
+    {
+        return self::getCatalogItems(false);
+    }
+
+    /** @param array<int, array<string, mixed>> $items */
+    private function writeCatalog(array $items): void
+    {
+        Setting::putValue('auction_catalog_items', json_encode(array_values($items), JSON_UNESCAPED_UNICODE));
+    }
+
     // ================================================================ Audit & ekspor
 
     public function transactions(Request $request): View

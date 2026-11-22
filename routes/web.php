@@ -32,6 +32,7 @@ Route::middleware(['auth', 'checked.in', 'role:participant'])->group(function ()
     Route::get('/transfer', [ParticipantTransferController::class, 'create'])->name('transfer.create');
     Route::get('/transfer/lookup', [ParticipantTransferController::class, 'lookup'])->middleware('throttle:120,1')->name('transfer.lookup');
     Route::post('/transfer', [ParticipantTransferController::class, 'store'])->middleware('throttle:30,1')->name('transfer.store');
+    Route::get('/catalog', [ParticipantTransferController::class, 'catalog'])->name('participant.catalog');
 });
 
 // ---------------------------------------------------------------- Panitia (admin)
@@ -48,6 +49,9 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     // Lelang (potong saldo pemenang)
     Route::get('/auction', [AdminControlController::class, 'auction'])->name('auction');
     Route::post('/auction', [AdminControlController::class, 'deductAuction'])->name('auction.deduct');
+    Route::post('/auction/catalog', [AdminControlController::class, 'catalogStore'])->name('auction.catalog.store');
+    Route::post('/auction/catalog/{id}/toggle', [AdminControlController::class, 'catalogToggle'])->name('auction.catalog.toggle');
+    Route::delete('/auction/catalog/{id}', [AdminControlController::class, 'catalogDestroy'])->name('auction.catalog.destroy');
 
     // Kontrol Big Screen / Leaderboard Reveal
     Route::get('/bigscreen/state', [AdminControlController::class, 'bigScreenState'])->name('bigscreen.state');

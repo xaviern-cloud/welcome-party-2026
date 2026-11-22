@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use Throwable;
 
 class CheckInController extends Controller
 {
@@ -54,7 +55,6 @@ class CheckInController extends Controller
 
         $code = User::normalizeCode($nimCode);
 
-        // Jika form tidak mengirim jabatan sama sekali, pertahankan jabatan hasil input pra-acara
         $jabatan = $request->has('jabatan')
             ? $request->input('jabatan')
             : User::participants()->whereKey($code)->value('jabatan');
@@ -83,15 +83,36 @@ class CheckInController extends Controller
 
         return $this->done(
             $request,
-            $this->successMessage($user).' Password: '.$user->password_plain,
+            $this->successMessage($user),
             ['participant' => $this->payload($user)]
         );
     }
 
+    private function plainPassword(User $user): string
+    {
+        try {
+            $plain = (string) $user->password_plain;
+        } catch (Throwable) {
+            $plain = '';
+        }
+
+        if ($plain === '') {
+            $plain = User::generatePassword(6);
+            $user->forceFill([
+                'password'       => $plain,
+                'password_plain' => $plain,
+            ])->save();
+        }
+
+        return $plain;
+    }
+
     private function successMessage(User $user): string
     {
-        return "Check-in berhasil: {$user->name} ({$user->nim_code}), urutan #{$user->arrival_order}. "
-            .'Saldo awal: '.$this->formatNumber($user->total_mata_uang_final).'.';
+        $password = $this->plainPassword($user);
+
+        return "Check-in berhasil: {$user->name} (NIM: {$user->nim_code}), urutan #{$user->arrival_order}. "
+            ."PASSWORD LOGIN: {$password}";
     }
 
     private function payload(User $u): array
@@ -113,6 +134,7 @@ class CheckInController extends Controller
             'estimated_balance'     => $u->estimated_balance,
             'total_mata_uang_final' => $u->total_mata_uang_final,
             'balance'               => $u->balance,
+            'password_plain'        => $u->is_checked_in ? $this->plainPassword($u) : null,
         ];
     }
 }

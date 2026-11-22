@@ -46,14 +46,21 @@
             </div>
         </div>
 
-        <div class="mt-6">
+        <div class="mt-6 grid grid-cols-2 gap-3">
             <a
                 href="{{ route('transfer.create') }}"
                 :class="frozen ? 'pointer-events-none opacity-50' : ''"
-                class="flex w-full items-center justify-center gap-2 rounded-xl bg-gold-500 py-3 text-sm font-bold text-zinc-950 transition hover:bg-gold-400"
+                class="flex items-center justify-center gap-2 rounded-xl bg-gold-500 py-3 text-sm font-bold text-zinc-950 transition hover:bg-gold-400"
             >
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
                 Kirim Saldo
+            </a>
+            <a
+                href="{{ route('participant.catalog') }}"
+                class="flex items-center justify-center gap-2 rounded-xl border border-gold-500/40 bg-zinc-900 py-3 text-sm font-semibold text-gold-300 transition hover:bg-zinc-800"
+            >
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                Katalog Lelang
             </a>
         </div>
     </div>

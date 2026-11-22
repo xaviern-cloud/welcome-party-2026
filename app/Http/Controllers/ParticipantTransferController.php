@@ -50,6 +50,7 @@ class ParticipantTransferController extends Controller
             'balance'      => $user->balance,
             'frozen'       => Setting::isFrozen(),
             'transactions' => $this->history($user->nim_code),
+            'catalog'      => AdminControlController::getCatalogItems(true),
         ])->header('Cache-Control', 'no-store');
     }
 
@@ -152,6 +153,14 @@ class ParticipantTransferController extends Controller
                 'time'     => $tx->created_at?->format('d/m/Y H:i:s'),
             ],
         ], redirect()->route('participant.dashboard'));
+    }
+
+    public function catalog(): View
+    {
+        return view('participant.catalog', [
+            'items'    => AdminControlController::getCatalogItems(true),
+            'stateUrl' => route('participant.state'),
+        ]);
     }
 
     /** @return array<int, array<string, mixed>> */
