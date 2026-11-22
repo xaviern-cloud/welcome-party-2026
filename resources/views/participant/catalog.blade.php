@@ -7,15 +7,20 @@
     x-data="{
         items: @js($items),
         init() {
-            setInterval(async () => {
+            const sync = async () => {
                 try {
-                    const res = await fetch('{{ $stateUrl }}', { headers: { 'Accept': 'application/json' } });
+                    const res = await fetch('{{ $stateUrl }}?t=' + Date.now(), {
+                        cache: 'no-store',
+                        headers: { 'Accept': 'application/json' }
+                    });
                     if (res.ok) {
                         const data = await res.json();
                         if (Array.isArray(data.catalog)) this.items = data.catalog;
                     }
                 } catch (e) {}
-            }, 4000);
+            };
+            sync();
+            setInterval(sync, 3000);
         }
     }"
     x-init="init()"

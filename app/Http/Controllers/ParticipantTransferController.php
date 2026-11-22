@@ -51,7 +51,7 @@ class ParticipantTransferController extends Controller
             'frozen'       => Setting::isFrozen(),
             'transactions' => $this->history($user->nim_code),
             'catalog'      => AdminControlController::getCatalogItems(true),
-        ])->header('Cache-Control', 'no-store');
+        ])->header('Cache-Control', 'no-store, max-age=0');
     }
 
     /** Halaman transfer. /transfer?to=056 (hasil scan QR) langsung memilih penerima. */
