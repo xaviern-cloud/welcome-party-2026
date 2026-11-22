@@ -129,7 +129,7 @@
     @auth
     @if(auth()->user()->isParticipant())
     <div class="fixed bottom-0 left-0 right-0 z-40 border-t border-zinc-800 bg-zinc-950/95 backdrop-blur-md">
-        <div class="mx-auto grid max-w-md grid-cols-2">
+        <div class="mx-auto grid max-w-md grid-cols-3">
             <a href="{{ route('participant.dashboard') }}" class="flex flex-col items-center justify-center py-3 text-xs font-medium {{ request()->routeIs('participant.dashboard') ? 'text-gold-400' : 'text-zinc-400 hover:text-white' }}">
                 <svg class="mb-1 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
                 Dompet
@@ -137,6 +137,10 @@
             <a href="{{ route('transfer.create') }}" class="flex flex-col items-center justify-center py-3 text-xs font-medium {{ request()->routeIs('transfer.create') ? 'text-gold-400' : 'text-zinc-400 hover:text-white' }}">
                 <svg class="mb-1 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
                 Kirim Saldo
+            </a>
+            <a href="{{ route('participant.catalog') }}" class="flex flex-col items-center justify-center py-3 text-xs font-medium {{ request()->routeIs('participant.catalog') ? 'text-gold-400' : 'text-zinc-400 hover:text-white' }}">
+                <svg class="mb-1 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                Katalog
             </a>
         </div>
     </div>

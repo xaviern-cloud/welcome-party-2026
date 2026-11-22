@@ -39,13 +39,14 @@
     </template>
 
     <div class="grid gap-4 sm:grid-cols-2">
-        <template x-for="item in items" :key="item.id">
+        <template x-for="(item, idx) in items" :key="item.id">
             <div class="overflow-hidden rounded-2xl border border-gold-500/30 bg-zinc-900/90 shadow-lg">
                 <template x-if="item.image_url">
                     <img :src="item.image_url" :alt="item.name" class="h-44 w-full object-cover bg-zinc-950">
                 </template>
                 <div class="p-4">
-                    <div class="text-base font-bold text-white" x-text="item.name"></div>
+                    <span class="inline-block rounded bg-gold-500/20 px-2 py-0.5 font-mono text-[11px] font-extrabold text-gold-400" x-text="item.code || ('BRG-' + String(idx + 1).padStart(2, '0'))"></span>
+                    <div class="mt-1.5 text-base font-bold text-white" x-text="item.name"></div>
                     <p x-show="item.description" class="mt-1 text-xs text-zinc-400" x-text="item.description"></p>
                     <div class="mt-4 flex items-center justify-between border-t border-zinc-800 pt-3">
                         <span class="text-[11px] uppercase tracking-wider text-zinc-500">Open Bid</span>

@@ -151,6 +151,7 @@ class AdminControlController extends Controller
             'winner'          => ['required', 'string', 'max:10'],
             'price'           => ['required', 'integer', 'min:1', 'max:1000000000'],
             'item'            => ['required', 'string', 'max:200'],
+            'item_code'       => ['nullable', 'string', 'max:30'],
             'idempotency_key' => ['nullable', 'string', 'max:64'],
         ], [
             'winner.required' => 'Pilih pemenang lelang (3-digit NIM).',
@@ -159,17 +160,23 @@ class AdminControlController extends Controller
             'item.required'   => 'Keterangan item lelang wajib diisi.',
         ]);
 
+        $itemCode  = trim((string) ($data['item_code'] ?? ''));
+        $itemTitle = trim($data['item']);
+        $fullLabel = ($itemCode !== '' && ! str_starts_with($itemTitle, "[{$itemCode}]"))
+            ? "[{$itemCode}] {$itemTitle}"
+            : $itemTitle;
+
         $tx = $this->transfers->deductForAuction(
             $data['winner'],
             (int) $data['price'],
-            $data['item'],
+            $fullLabel,
             $request->user()->nim_code,
             $data['idempotency_key'] ?? null
         );
 
         $tx->loadMissing('user:nim_code,name');
 
-        $message = "Potongan lelang berhasil: {$tx->user->name} ({$tx->user_nim_code}) -"
+        $message = "Potongan lelang berhasil ({$fullLabel}): {$tx->user->name} ({$tx->user_nim_code}) -"
             .$this->formatNumber($tx->amount).'. Sisa saldo: '.$this->formatNumber((int) $tx->user_balance_after).'.';
 
         return $this->done($request, $message, [
@@ -193,8 +200,19 @@ class AdminControlController extends Controller
         ]);
 
         $items   = $this->readCatalog();
+        $nextNum = 1;
+        foreach ($items as $existing) {
+            if (preg_match('/(\d+)$/', (string) ($existing['code'] ?? ''), $m)) {
+                $nextNum = max($nextNum, ((int) $m[1]) + 1);
+            } else {
+                $nextNum = max($nextNum, count($items) + 1);
+            }
+        }
+        $code = 'BRG-'.str_pad((string) $nextNum, 2, '0', STR_PAD_LEFT);
+
         $items[] = [
             'id'             => (string) \Illuminate\Support\Str::uuid(),
+            'code'           => $code,
             'name'           => trim($data['name']),
             'description'    => trim((string) ($data['description'] ?? '')),
             'starting_price' => (int) $data['starting_price'],
@@ -206,9 +224,9 @@ class AdminControlController extends Controller
 
         $this->writeCatalog($items);
 
-        return $this->done($request, "Item \"{$data['name']}\" ditambahkan ke katalog (status: Tersembunyi).", ['catalog' => $items]);
+        return $this->done($request, "Item [{$code}] \"{$data['name']}\" ditambahkan ke katalog (status: Tersembunyi).", ['catalog' => $items]);
     }
-    
+
     public function catalogToggle(Request $request, string $id): JsonResponse|RedirectResponse
     {
         $items   = $this->readCatalog();
