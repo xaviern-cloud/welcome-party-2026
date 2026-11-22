@@ -2,18 +2,13 @@
 
 @section('title', 'Dompet Saya — Welcome Party 2026')
 
-@push('head')
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-@endpush
-
 @section('content')
 <div
     x-data="participantWallet({
         balance: {{ (int) $user->balance }},
         frozen: {{ $frozen ? 'true' : 'false' }},
         transactions: @js($transactions),
-        stateUrl: '{{ $stateUrl }}',
-        transferUrl: '{{ $transferUrl }}'
+        stateUrl: '{{ $stateUrl }}'
     })"
     x-init="init()"
     class="mx-auto max-w-xl space-y-5"
@@ -51,62 +46,15 @@
             </div>
         </div>
 
-        <div class="mt-6 grid grid-cols-2 gap-3">
+        <div class="mt-6">
             <a
                 href="{{ route('transfer.create') }}"
                 :class="frozen ? 'pointer-events-none opacity-50' : ''"
-                class="flex items-center justify-center gap-2 rounded-xl bg-gold-500 py-3 text-sm font-bold text-zinc-950 transition hover:bg-gold-400"
+                class="flex w-full items-center justify-center gap-2 rounded-xl bg-gold-500 py-3 text-sm font-bold text-zinc-950 transition hover:bg-gold-400"
             >
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
                 Kirim Saldo
             </a>
-            <button
-                type="button"
-                @click="showQr = !showQr"
-                class="flex items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 py-3 text-sm font-semibold text-white transition hover:border-gold-500/50"
-            >
-                <svg class="h-4 w-4 text-gold-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/></svg>
-                <span x-text="showQr ? 'Tutup QR' : 'QR Terima'">QR Terima</span>
-            </button>
-        </div>
-    </div>
-
-    {{-- Kartu QR Code Terima Saldo --}}
-    <div x-show="showQr" x-transition class="rounded-2xl border border-zinc-800 bg-zinc-900/90 p-5 text-center">
-        <div class="text-sm font-bold text-white">QR Code Penerima ({{ $user->nim_code }})</div>
-        <p class="mt-1 text-xs text-zinc-400">Minta teman memindai QR ini untuk mengirim saldo langsung ke akunmu.</p>
-        <div class="mx-auto my-4 inline-block rounded-2xl bg-white p-3.5 shadow-inner">
-            <div id="my-qr-code"></div>
-        </div>
-        <div class="font-mono text-xs text-gold-400">Kode NIM: {{ $user->nim_code }}</div>
-    </div>
-
-    {{-- Rincian Modal Awal (Accordion) --}}
-    <div x-data="{ open: false }" class="rounded-2xl border border-zinc-800 bg-zinc-900/70">
-        <button type="button" @click="open = !open" class="flex w-full items-center justify-between px-5 py-4 text-left">
-            <div>
-                <div class="text-sm font-semibold text-zinc-200">Rincian Modal Awal Check-In</div>
-                <div class="text-xs text-zinc-400">Total terkunci: <span class="font-semibold text-gold-400">{{ number_format($breakdown['total'], 0, ',', '.') }}</span></div>
-            </div>
-            <svg class="h-5 w-5 text-zinc-400 transition-transform" :class="open ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-        </button>
-        <div x-show="open" x-cloak class="space-y-2 border-t border-zinc-800 px-5 py-4 text-xs">
-            <div class="flex justify-between text-zinc-300">
-                <span>Mata Uang Dasar (Poin {{ $user->poin_inisialisasi }})</span>
-                <span class="font-mono font-semibold">{{ number_format($breakdown['dasar'], 0, ',', '.') }}</span>
-            </div>
-            <div class="flex justify-between text-zinc-300">
-                <span>Bonus Kelompok</span>
-                <span class="font-mono font-semibold text-emerald-400">+{{ number_format($breakdown['kelompok'], 0, ',', '.') }}</span>
-            </div>
-            <div class="flex justify-between text-zinc-300">
-                <span>Bonus Kecepatan Hadir (#{{ $user->arrival_order }})</span>
-                <span class="font-mono font-semibold text-emerald-400">+{{ number_format($breakdown['kecepatan'], 0, ',', '.') }}</span>
-            </div>
-            <div class="flex justify-between text-zinc-300">
-                <span>Bonus Jabatan ({{ $user->jabatan ?? 'ANGGOTA' }})</span>
-                <span class="font-mono font-semibold text-emerald-400">+{{ number_format($breakdown['ketua'], 0, ',', '.') }}</span>
-            </div>
         </div>
     </div>
 
@@ -131,8 +79,8 @@
                     <div class="text-right">
                         <div
                             class="font-mono text-sm font-bold"
-                            :class="tx.is_incoming ? 'text-emerald-400' : 'text-red-400'"
-                            x-text="(tx.is_incoming ? '+' : '-') + formatNum(tx.amount)"
+                            :class="isIncoming(tx) ? 'text-emerald-400' : 'text-red-400'"
+                            x-text="(isIncoming(tx) ? '+' : '-') + formatNum(Math.abs(tx.amount))"
                         ></div>
                         <div class="text-[10px] text-zinc-500" x-text="tx.time"></div>
                     </div>
@@ -150,17 +98,15 @@ function participantWallet(cfg) {
         balance: cfg.balance,
         frozen: cfg.frozen,
         transactions: cfg.transactions,
-        showQr: true,
+        isIncoming(tx) {
+            if (typeof tx.is_incoming === 'boolean') return tx.is_incoming;
+            if (tx.direction === 'in' || tx.type === 'in' || tx.type === 'credit') return true;
+            if (tx.direction === 'out' || tx.type === 'out' || tx.type === 'debit') return false;
+            if (typeof tx.delta === 'number') return tx.delta >= 0;
+            const title = (tx.title || tx.label || '').toLowerCase();
+            return title.startsWith('transfer dari') || title.startsWith('saldo awal') || title.startsWith('bonus');
+        },
         init() {
-            new QRCode(document.getElementById('my-qr-code'), {
-                text: cfg.transferUrl,
-                width: 180,
-                height: 180,
-                colorDark: '#09090b',
-                colorLight: '#ffffff',
-                correctLevel: QRCode.CorrectLevel.M
-            });
-
             setInterval(async () => {
                 try {
                     const res = await fetch(cfg.stateUrl, { headers: { 'Accept': 'application/json' } });
