@@ -18,7 +18,7 @@ class BigScreenController extends Controller
         return view('bigscreen', [
             'event'    => config('event.name'),
             'tagline'  => config('event.tagline'),
-            'stateUrl' => route('api.bigscreen.state'),
+            'stateUrl' => route('bigscreen.public-state'),
             'pollMs'   => 2000,
         ]);
     }
