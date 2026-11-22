@@ -88,11 +88,36 @@ class PreEventScoreController extends Controller
 
     public function update(Request $request, string $nimCode): JsonResponse|RedirectResponse
     {
-        $user = $this->scores->updateParticipant($nimCode, $request->only(self::UPDATE_FIELDS));
+        $request->validate([
+            'password' => ['nullable', 'string', 'min:4', 'max:64'],
+        ], [
+            'password.min' => 'Password baru minimal 4 karakter.',
+        ]);
+
+        $code   = User::normalizeCode($nimCode);
+        $target = User::participants()->whereKey($code)->firstOrFail();
+
+        if (! $target->is_checked_in) {
+            $user = $this->scores->updateParticipant($nimCode, $request->only(self::UPDATE_FIELDS));
+        } else {
+            $user = $target;
+        }
+
+        $newPassword  = trim((string) $request->input('password', ''));
+        $passwordNote = '';
+
+        if ($newPassword !== '') {
+            $user->forceFill([
+                'password'          => $newPassword,
+                'active_session_id' => null,
+            ])->save();
+
+            $passwordNote = " Password baru: {$newPassword}";
+        }
 
         return $this->done(
             $request,
-            "Data {$user->name} ({$user->nim_code}) diperbarui. Estimasi modal kelompok dihitung ulang.",
+            "Data {$user->name} ({$user->nim_code}) diperbarui.{$passwordNote}",
             ['participant' => $this->payload($user)]
         );
     }

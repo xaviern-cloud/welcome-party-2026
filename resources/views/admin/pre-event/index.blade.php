@@ -144,8 +144,7 @@
                     <th class="px-4 py-3 text-right">Aksi</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-zinc-800/70">
-                @forelse($participants as $p)
+            @forelse($participants as $p)
             <tbody x-data="{ editing: false }" class="divide-y divide-zinc-800/70 border-b border-zinc-800/70">
                 <tr class="hover:bg-zinc-900">
                     <td class="px-4 py-3 font-mono font-bold text-gold-400">{{ $p->nim_code }}</td>
@@ -170,40 +169,39 @@
                         @endif
                     </td>
                     <td class="px-4 py-3 text-right">
-                        @if(!$p->is_checked_in)
-                            <div class="inline-flex items-center gap-3">
-                                <button type="button" @click="editing = !editing" class="text-gold-400 hover:underline">
-                                    <span x-text="editing ? 'Tutup' : 'Edit'">Edit</span>
-                                </button>
+                        <div class="inline-flex items-center gap-3">
+                            <button type="button" @click="editing = !editing" class="text-gold-400 hover:underline">
+                                <span x-text="editing ? 'Tutup' : 'Edit'">Edit</span>
+                            </button>
+                            @if(!$p->is_checked_in)
                                 <form method="POST" action="{{ route('admin.pre-event.destroy', $p->nim_code) }}" onsubmit="return confirm('Hapus {{ $p->name }} ({{ $p->nim_code }}) dari daftar?')">
                                     @csrf
                                     @method('DELETE')
                                     <button type="submit" class="text-red-400 hover:underline">Hapus</button>
                                 </form>
-                            </div>
-                        @else
-                            <span class="text-zinc-600">Terkunci</span>
-                        @endif
+                            @else
+                                <span class="text-zinc-600">Terkunci</span>
+                            @endif
+                        </div>
                     </td>
                 </tr>
-                @if(!$p->is_checked_in)
                 <tr x-show="editing" x-cloak class="bg-zinc-950">
                     <td colspan="8" class="p-4">
-                        <form method="POST" action="{{ route('admin.pre-event.update', $p->nim_code) }}" class="grid gap-3 sm:grid-cols-6">
+                        <form method="POST" action="{{ route('admin.pre-event.update', $p->nim_code) }}" class="grid gap-3 sm:grid-cols-8">
                             @csrf
                             @method('PUT')
-                            <input type="text" name="name" value="{{ $p->name }}" required class="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-white sm:col-span-2">
-                            <input type="text" name="group_name" value="{{ $p->group_name }}" placeholder="Kelompok" class="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-white">
-                            <select name="jabatan" class="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-white">
+                            <input type="text" name="name" value="{{ $p->name }}" required placeholder="Nama" {{ $p->is_checked_in ? 'readonly' : '' }} class="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-white sm:col-span-2">
+                            <input type="text" name="group_name" value="{{ $p->group_name }}" placeholder="Kelompok" {{ $p->is_checked_in ? 'readonly' : '' }} class="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-white">
+                            <select name="jabatan" {{ $p->is_checked_in ? 'disabled' : '' }} class="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-white">
                                 <option value="BUKAN" {{ $p->jabatan !== 'KETUA' ? 'selected' : '' }}>Anggota</option>
                                 <option value="KETUA" {{ $p->jabatan === 'KETUA' ? 'selected' : '' }}>KETUA</option>
                             </select>
-                            <input type="number" name="poin_inisialisasi" value="{{ $p->poin_inisialisasi }}" min="0" class="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 font-mono text-xs text-white">
-                            <button type="submit" class="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-zinc-950">Simpan</button>
+                            <input type="number" name="poin_inisialisasi" value="{{ $p->poin_inisialisasi }}" min="0" {{ $p->is_checked_in ? 'readonly' : '' }} class="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 font-mono text-xs text-white">
+                            <input type="text" name="password" minlength="4" placeholder="Password baru (opsional)" class="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 font-mono text-xs text-amber-300 placeholder:text-zinc-500 sm:col-span-2">
+                            <button type="submit" class="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-zinc-950 hover:bg-emerald-400">Simpan</button>
                         </form>
                     </td>
                 </tr>
-                @endif
             </tbody>
             @empty
             <tbody>
@@ -212,7 +210,6 @@
                 </tr>
             </tbody>
             @endforelse
-            </tbody>
         </table>
     </div>
 
