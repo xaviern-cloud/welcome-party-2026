@@ -47,11 +47,13 @@ class ParticipantTransferController extends Controller
         $user = $request->user();
 
         return response()->json([
-            'balance'      => $user->balance,
-            'frozen'       => Setting::isFrozen(),
-            'transactions' => $this->history($user->nim_code),
-            'catalog'      => AdminControlController::getCatalogItems(true),
-        ])->header('Cache-Control', 'no-store, max-age=0');
+            'balance'        => $user->balance,
+            'frozen'         => Setting::isFrozen(),
+            'transactions'   => $this->history($user->nim_code),
+            'catalog'        => AdminControlController::getCatalogItems(true),
+            'live_auction'   => AdminControlController::getLiveAuctionState(),
+            'payment_config' => AdminControlController::getPaymentConfig(),
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
 
     /** Halaman transfer. /transfer?to=056 (hasil scan QR) langsung memilih penerima. */
@@ -155,14 +157,16 @@ class ParticipantTransferController extends Controller
         ], redirect()->route('participant.dashboard'));
     }
 
-    public function catalog(): View
+    public function catalog(Request $request): View
     {
         return view('participant.catalog', [
-            'items'    => AdminControlController::getCatalogItems(true),
-            'stateUrl' => route('participant.state'),
+            'items'         => AdminControlController::getCatalogItems(true),
+            'liveAuction'   => AdminControlController::getLiveAuctionState(),
+            'paymentConfig' => AdminControlController::getPaymentConfig(),
+            'myNim'         => $request->user()->nim_code,
+            'stateUrl'      => route('participant.state'),
         ]);
     }
-
     /** @return array<int, array<string, mixed>> */
     private function history(string $nimCode): array
     {

@@ -84,15 +84,17 @@
             </div>
         </div>
 
-        {{-- Mobile Nav Admin --}}
+       {{-- Mobile Nav Admin --}}
         @if(auth()->user()->isAdmin())
         <div class="flex gap-1 overflow-x-auto border-t border-zinc-800/60 px-4 py-2 md:hidden">
             <a href="{{ route('admin.dashboard') }}" class="whitespace-nowrap rounded-lg px-2.5 py-1 text-xs {{ request()->routeIs('admin.dashboard') ? 'bg-gold-500/20 text-gold-400' : 'text-zinc-400' }}">Dashboard</a>
             <a href="{{ route('admin.checkin.index') }}" class="whitespace-nowrap rounded-lg px-2.5 py-1 text-xs {{ request()->routeIs('admin.checkin.*') ? 'bg-gold-500/20 text-gold-400' : 'text-zinc-400' }}">Check-In</a>
             <a href="{{ route('admin.pre-event.index') }}" class="whitespace-nowrap rounded-lg px-2.5 py-1 text-xs {{ request()->routeIs('admin.pre-event.*') || request()->routeIs('admin.import.*') ? 'bg-gold-500/20 text-gold-400' : 'text-zinc-400' }}">Pra-Acara</a>
             <a href="{{ route('admin.auction') }}" class="whitespace-nowrap rounded-lg px-2.5 py-1 text-xs {{ request()->routeIs('admin.auction') ? 'bg-gold-500/20 text-gold-400' : 'text-zinc-400' }}">Lelang</a>
+            <a href="{{ route('admin.payment.settings') }}" class="whitespace-nowrap rounded-lg px-2.5 py-1 text-xs {{ request()->routeIs('admin.payment.*') ? 'bg-gold-500/20 text-gold-400' : 'text-zinc-400' }}">Pembayaran</a>
             <a href="{{ route('admin.transactions') }}" class="whitespace-nowrap rounded-lg px-2.5 py-1 text-xs {{ request()->routeIs('admin.transactions') ? 'bg-gold-500/20 text-gold-400' : 'text-zinc-400' }}">Audit</a>
-            <a href="{{ route('bigscreen') }}" target="_blank" class="whitespace-nowrap rounded-lg border border-gold-500/40 px-2.5 py-1 text-xs text-gold-400">Big Screen</a>
+            <a href="{{ route('bigscreen') }}" target="_blank" class="whitespace-nowrap rounded-lg border border-gold-500/40 px-2.5 py-1 text-xs text-gold-400">Leaderboard</a>
+            <a href="{{ route('bigscreen.auction') }}" target="_blank" class="whitespace-nowrap rounded-lg border border-emerald-500/40 px-2.5 py-1 text-xs text-emerald-300">Layar Lelang</a>
         </div>
         @endif
     </nav>

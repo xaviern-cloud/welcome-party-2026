@@ -7,9 +7,10 @@ use App\Models\Transaction;
 class TransactionPresenter
 {
     public const LABELS = [
-        Transaction::TYPE_INITIAL  => 'Saldo Awal',
-        Transaction::TYPE_TRANSFER => 'Transfer',
-        Transaction::TYPE_AUCTION  => 'Potongan Lelang',
+        Transaction::TYPE_INITIAL      => 'Saldo Awal',
+        Transaction::TYPE_TRANSFER     => 'Transfer',
+        Transaction::TYPE_AUCTION      => 'Potongan Lelang',
+        Transaction::TYPE_AUCTION_CASH => 'Lelang Uang Asli (Rp)',
     ];
 
     /**
@@ -22,10 +23,11 @@ class TransactionPresenter
         $label        = self::LABELS[$t->type] ?? $t->type;
         $counterparty = null;
         $balanceAfter = $t->user_balance_after;
+        $isRupiah     = false;
 
         if ($t->type === Transaction::TYPE_TRANSFER) {
-            $outgoing = $t->sender_nim_code === $me;
-            $other    = $outgoing ? $t->receiver : $t->sender;
+            $outgoing  = $t->sender_nim_code === $me;
+            $other     = $outgoing ? $t->receiver : $t->sender;
             $otherCode = $outgoing ? $t->receiver_nim_code : $t->sender_nim_code;
 
             $direction    = $outgoing ? 'out' : 'in';
@@ -38,6 +40,10 @@ class TransactionPresenter
             ];
         } elseif ($t->type === Transaction::TYPE_AUCTION) {
             $direction = 'out';
+        } elseif ($t->type === Transaction::TYPE_AUCTION_CASH) {
+            $direction = 'cash';
+            $label     = 'Menang Lelang (Uang Asli)';
+            $isRupiah  = true;
         }
 
         return [
@@ -47,7 +53,8 @@ class TransactionPresenter
             'label'         => $label,
             'counterparty'  => $counterparty,
             'amount'        => $t->amount,
-            'signed_amount' => $direction === 'out' ? -$t->amount : $t->amount,
+            'signed_amount' => $direction === 'out' ? -$t->amount : ($direction === 'cash' ? 0 : $t->amount),
+            'is_rupiah'     => $isRupiah,
             'balance_after' => $balanceAfter,
             'description'   => $t->description,
             'created_at'    => $t->created_at?->toIso8601String(),
@@ -66,6 +73,7 @@ class TransactionPresenter
             'receiver'    => $t->receiver_nim_code ? ['nim_code' => $t->receiver_nim_code, 'name' => $t->receiver?->name] : null,
             'user'        => $t->user_nim_code ? ['nim_code' => $t->user_nim_code, 'name' => $t->user?->name] : null,
             'amount'      => $t->amount,
+            'is_rupiah'   => $t->type === Transaction::TYPE_AUCTION_CASH,
             'description' => $t->description,
             'created_by'  => $t->created_by,
             'time'        => $t->created_at?->format('d/m/Y H:i:s'),

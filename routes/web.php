@@ -17,6 +17,9 @@ Route::middleware('guest')->group(function () {
 // Layar proyektor: publik & tanpa session
 Route::get('/big-screen', [BigScreenController::class, 'show'])->name('bigscreen');
 Route::get('/big-screen/state', [BigScreenController::class, 'state'])->name('bigscreen.public-state');
+// Big Screen Khusus Sesi Lelang Live (Publik & Real-time 1 detik)
+Route::get('/bigscreen-auction', [AdminControlController::class, 'bigScreenAuctionShow'])->name('bigscreen.auction');
+Route::get('/bigscreen-auction/state', [AdminControlController::class, 'bigScreenAuctionState'])->name('bigscreen.auction.state');
 
 // ---------------------------------------------------------------- Terautentikasi
 Route::middleware('auth')->group(function () {
@@ -89,4 +92,9 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     Route::post('/check-in/register', [CheckInController::class, 'registerAndCheckIn'])->name('checkin.register');
     Route::post('/check-in/{nimCode}', [CheckInController::class, 'checkIn'])
         ->where('nimCode', '[0-9A-Za-z]{3}')->name('checkin.confirm');
+
+    // Kontrol Live Bidding Panggung & Kustomisasi Pembayaran
+    Route::post('/auction/live', [AdminControlController::class, 'updateLiveAuction'])->name('auction.live');
+    Route::get('/payment-settings', [AdminControlController::class, 'paymentSettings'])->name('payment.settings');
+    Route::post('/payment-settings', [AdminControlController::class, 'savePaymentSettings'])->name('payment.settings.save');
 });

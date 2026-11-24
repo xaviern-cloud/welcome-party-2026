@@ -1,11 +1,12 @@
 @extends('layouts.app')
 
-@section('title', 'Lelang & Katalog — Welcome Party 2026')
+@section('title', 'Lelang & Live Stage — Welcome Party 2026')
 
 @section('content')
 @php
     $catalogList = collect($catalog ?? [])->values()->map(function ($c, $idx) {
         $c['code'] = $c['code'] ?? ('BRG-' . str_pad((string) ($idx + 1), 2, '0', STR_PAD_LEFT));
+        $c['currency'] = $c['currency'] ?? 'coins';
         return $c;
     })->all();
 @endphp
@@ -14,25 +15,160 @@
     x-data="auctionDesk({
         searchUrl: '{{ route("admin.participants.search") }}',
         deductUrl: '{{ route("admin.auction.deduct") }}',
+        liveUrl: '{{ route("admin.auction.live") }}',
         recent: @js($recent),
-        catalog: @js($catalogList)
+        catalog: @js($catalogList),
+        live: @js($liveAuction ?? ['active' => false])
     })"
     x-init="init()"
     class="space-y-8"
 >
-    {{-- BAGIAN 1: POTONG SALDO PEMENANG & RIWAYAT LELANG --}}
+    {{-- BAGIAN 0: KONTROL LIVE BIDDING BIG SCREEN --}}
+    <div class="rounded-2xl border border-emerald-500/40 bg-zinc-900/90 p-6 shadow-xl">
+        <div class="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-4">
+            <div>
+                <div class="flex items-center gap-2">
+                    <span class="h-2.5 w-2.5 rounded-full" :class="live.active ? 'animate-ping bg-emerald-400' : 'bg-zinc-600'"></span>
+                    <h2 class="text-lg font-bold text-emerald-400">Kontrol Live Bidding — Big Screen Lelang</h2>
+                </div>
+                <p class="mt-0.5 text-xs text-zinc-400">Ubah item, nominal penawaran tertinggi (Current Bid), dan nama penawar (Current Bidder) secara real-time di proyektor & HP peserta.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <a href="{{ route('admin.payment.settings') }}" class="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs font-semibold text-zinc-200 hover:border-gold-500/50">
+                    ⚙ Atur Rekening & QRIS
+                </a>
+                <a href="{{ route('bigscreen.auction') }}" target="_blank" class="rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3.5 py-2 text-xs font-bold text-emerald-300 hover:bg-emerald-500/25">
+                    Buka Layar Lelang ↗
+                </a>
+            </div>
+        </div>
+
+        <div x-show="liveToast" x-cloak class="mt-4 rounded-xl border border-emerald-500/40 bg-emerald-950/60 px-4 py-2.5 text-xs text-emerald-200" x-text="liveToast"></div>
+
+        <div class="mt-5 grid gap-5 lg:grid-cols-12">
+            {{-- Kolom Kiri: Item & Mata Uang --}}
+            <div class="space-y-3 lg:col-span-5">
+                <div class="flex items-center justify-between">
+                    <label class="text-xs font-semibold text-zinc-400">Item Sedang Dilelang</label>
+                    <select @change="loadItemToLive($event.target.value); $event.target.value = ''" class="rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1 text-[11px] text-emerald-300">
+                        <option value="">📺 Pilih item dari katalog...</option>
+                        <template x-for="c in catalog" :key="c.id">
+                            <option :value="c.id" x-text="'[' + c.code + '] ' + c.name + (c.currency === 'cash' ? ' (Rp)' : ' (Coins)')"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2">
+                    <input type="text" x-model="liveForm.code" placeholder="ID (BRG-01)" class="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-xs font-bold uppercase text-gold-400">
+                    <input type="text" x-model="liveForm.name" placeholder="Nama Item..." class="col-span-2 rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-white">
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <button type="button" @click="liveForm.currency = 'coins'"
+                        :class="liveForm.currency === 'coins' ? 'border-amber-400 bg-amber-500/20 text-amber-300' : 'border-zinc-700 bg-zinc-950 text-zinc-400'"
+                        class="rounded-xl border py-2 text-xs font-bold">
+                        🪙 Poin (Coins)
+                    </button>
+                    <button type="button" @click="liveForm.currency = 'cash'"
+                        :class="liveForm.currency === 'cash' ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300' : 'border-zinc-700 bg-zinc-950 text-zinc-400'"
+                        class="rounded-xl border py-2 text-xs font-bold">
+                        💵 Uang Asli (Rp)
+                    </button>
+                </div>
+
+                <input type="text" x-model="liveForm.description" placeholder="Deskripsi singkat item..." class="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-white">
+            </div>
+
+            {{-- Kolom Tengah: Current Bid & Current Bidder --}}
+            <div class="space-y-3 lg:col-span-4">
+                <div>
+                    <label class="mb-1 block text-xs font-semibold text-zinc-400" x-text="liveForm.currency === 'cash' ? 'Current Bid (Rupiah)' : 'Current Bid (Coins)'"></label>
+                    <input type="number" x-model.number="liveForm.current_bid" min="0" class="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3.5 py-2 font-mono text-lg font-extrabold text-white">
+                    <div class="mt-1.5 flex flex-wrap gap-1.5">
+                        <template x-if="liveForm.currency === 'coins'">
+                            <div class="flex gap-1.5">
+                                <button type="button" @click="liveForm.current_bid = Number(liveForm.current_bid || 0) + 100" class="rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1 font-mono text-[11px] text-amber-300 hover:bg-zinc-800">+100</button>
+                                <button type="button" @click="liveForm.current_bid = Number(liveForm.current_bid || 0) + 500" class="rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1 font-mono text-[11px] text-amber-300 hover:bg-zinc-800">+500</button>
+                                <button type="button" @click="liveForm.current_bid = Number(liveForm.current_bid || 0) + 1000" class="rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1 font-mono text-[11px] text-amber-300 hover:bg-zinc-800">+1.000</button>
+                            </div>
+                        </template>
+                        <template x-if="liveForm.currency === 'cash'">
+                            <div class="flex gap-1.5">
+                                <button type="button" @click="liveForm.current_bid = Number(liveForm.current_bid || 0) + 5000" class="rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1 font-mono text-[11px] text-emerald-300 hover:bg-zinc-800">+5rb</button>
+                                <button type="button" @click="liveForm.current_bid = Number(liveForm.current_bid || 0) + 10000" class="rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1 font-mono text-[11px] text-emerald-300 hover:bg-zinc-800">+10rb</button>
+                                <button type="button" @click="liveForm.current_bid = Number(liveForm.current_bid || 0) + 50000" class="rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1 font-mono text-[11px] text-emerald-300 hover:bg-zinc-800">+50rb</button>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="relative">
+                    <label class="mb-1 block text-xs font-semibold text-zinc-400">Current Bidder (Ketik NIM atau Nama Akun)</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <input type="text" x-model="liveForm.bidder_nim" @input.debounce.150ms="searchLiveBidder()" placeholder="NIM (092)" class="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-xs font-bold text-gold-400">
+                        <input type="text" x-model="liveForm.bidder_name" @input.debounce.150ms="searchLiveBidderByName()" placeholder="Nama Bidder..." class="col-span-2 rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-white">
+                    </div>
+                    <div x-show="liveResults.length > 0" x-cloak class="absolute z-30 mt-1 max-h-44 w-full divide-y divide-zinc-800 overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-950 shadow-2xl">
+                        <template x-for="p in liveResults" :key="p.nim_code">
+                            <button type="button" @click="pickLiveBidder(p)" class="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-zinc-900">
+                                <span><strong class="font-mono text-gold-400" x-text="'#' + p.nim_code"></strong> <span class="text-white" x-text="p.name"></span></span>
+                                <span class="font-mono text-[11px] text-zinc-400" x-text="formatNum(p.balance) + ' Coins'"></span>
+                            </button>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Kolom Kanan: Tombol Push ke Big Screen & Deal --}}
+            <div class="flex flex-col justify-between gap-2 rounded-xl border border-zinc-800 bg-zinc-950/70 p-4 lg:col-span-3">
+                <div class="space-y-2">
+                    <button type="button" @click="pushLive(true, false)" :disabled="liveBusy || !liveForm.name"
+                        class="w-full rounded-xl bg-emerald-500 py-2.5 text-xs font-extrabold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">
+                        🚀 Update & Tampilkan di Layar
+                    </button>
+                    <button type="button" @click="dealFromLive()" :disabled="!liveForm.name || !liveForm.bidder_nim || !liveForm.current_bid"
+                        class="w-full rounded-xl border border-gold-500/50 bg-gold-500/15 py-2 text-xs font-bold text-gold-300 hover:bg-gold-500/25 disabled:opacity-40">
+                        🔨 Deal! Masukkan ke Pemenang ↓
+                    </button>
+                </div>
+                <button type="button" @click="pushLive(false, false)" :disabled="!live.active || liveBusy"
+                    class="w-full rounded-xl border border-zinc-700 bg-zinc-900 py-2 text-xs text-zinc-400 hover:text-white disabled:opacity-40">
+                    Tutup Layar Lelang (Standby)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    {{-- BAGIAN 1: INPUT PEMENANG LELANG & RIWAYAT LELANG --}}
     <div class="grid gap-6 lg:grid-cols-2">
         <div class="rounded-2xl border border-gold-500/30 bg-zinc-900/80 p-6">
-            <h1 class="text-xl font-bold text-gold-400">Input Pemenang Lelang</h1>
-            <p class="mt-1 text-xs text-zinc-400">Pilih pemenang & barang untuk melihat kalkulasi sisa saldo secara real-time.</p>
+            <h1 class="text-xl font-bold text-gold-400">Input Pemenang Lelang (Final Deal)</h1>
+            <p class="mt-1 text-xs text-zinc-400">Semua akun terdaftar dapat menjadi pemenang. Pilih metode Coins atau Uang Asli (Rp).</p>
 
             <div x-show="successMsg" x-cloak class="mt-4 rounded-xl border border-emerald-500/40 bg-emerald-950/60 p-3 text-xs text-emerald-200" x-text="successMsg"></div>
             <div x-show="errorMsg" x-cloak class="mt-4 rounded-xl border border-red-500/40 bg-red-950/60 p-3 text-xs text-red-200" x-text="errorMsg"></div>
 
             <form @submit.prevent="submitAuction" class="mt-5 space-y-4">
-                {{-- Pilih Pemenang Lelang --}}
+                {{-- Switch Currency --}}
                 <div>
-                    <label class="mb-1.5 block text-xs font-semibold text-zinc-400">Pemenang Lelang (Ketik 3 Digit NIM atau Nama)</label>
+                    <label class="mb-1.5 block text-xs font-semibold text-zinc-400">Mata Uang Lelang</label>
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <button type="button" @click="currency = 'coins'"
+                            :class="currency === 'coins' ? 'border-amber-400 bg-amber-500/20 text-amber-300' : 'border-zinc-700 bg-zinc-950 text-zinc-400'"
+                            class="rounded-xl border py-2.5 text-xs font-bold transition">
+                            🪙 Poin (Potong Coins)
+                        </button>
+                        <button type="button" @click="currency = 'cash'"
+                            :class="currency === 'cash' ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300' : 'border-zinc-700 bg-zinc-950 text-zinc-400'"
+                            class="rounded-xl border py-2.5 text-xs font-bold transition">
+                            💵 Uang Asli (Rupiah / Rp)
+                        </button>
+                    </div>
+                </div>
+
+                {{-- Pilih Pemenang Lelang (Semua akun bisa ngebid) --}}
+                <div>
+                    <label class="mb-1.5 block text-xs font-semibold text-zinc-400">Pemenang Lelang (Ketik 3 Digit NIM atau Nama Akun)</label>
                     <template x-if="winner">
                         <div class="flex items-center justify-between rounded-xl border border-gold-500/50 bg-gold-500/10 p-3.5">
                             <div>
@@ -42,7 +178,7 @@
                                 </div>
                                 <div class="mt-1 text-xs text-zinc-400">
                                     Kelompok: <span class="text-zinc-200" x-text="winner.group_name || '-'"></span> •
-                                    Saldo saat ini: <strong class="font-mono text-emerald-400" x-text="formatNum(winner.balance) + ' Coins'"></strong>
+                                    Saldo Koin: <strong class="font-mono text-emerald-400" x-text="formatNum(winner.balance) + ' Coins'"></strong>
                                 </div>
                             </div>
                             <button type="button" @click="winner = null; q = ''; results = []" class="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-300 hover:text-white">Ganti</button>
@@ -55,12 +191,12 @@
                                 x-model="q"
                                 @input.debounce.150ms="search()"
                                 @focus="if (q.trim()) search()"
-                                placeholder="Ketik NIM (mis. 056) atau nama peserta..."
+                                placeholder="Ketik NIM (mis. 056) atau nama akun..."
                                 class="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm text-white focus:border-gold-500 focus:outline-none"
                             >
-                            <div x-show="searching" x-cloak class="mt-1.5 text-[11px] text-zinc-400">Mencari peserta hadir...</div>
+                            <div x-show="searching" x-cloak class="mt-1.5 text-[11px] text-zinc-400">Mencari akun...</div>
                             <div x-show="!searching && q.trim() !== '' && results.length === 0" x-cloak class="mt-2 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-xs text-zinc-500">
-                                Peserta belum check-in atau tidak ditemukan.
+                                Akun tidak ditemukan.
                             </div>
                             <div x-show="results.length > 0" x-cloak class="mt-2 max-h-60 divide-y divide-zinc-800 overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-950 shadow-2xl">
                                 <template x-for="person in results" :key="person.nim_code">
@@ -97,7 +233,7 @@
                                     <option
                                         :value="c.id"
                                         :disabled="c.is_sold"
-                                        x-text="'[' + c.code + '] ' + c.name + (c.is_sold ? ' (TERJUAL)' : ' (Open: ' + formatNum(c.starting_price) + ')')"
+                                        x-text="'[' + c.code + '] ' + c.name + (c.is_sold ? ' (TERJUAL)' : ' (' + (c.currency === 'cash' ? 'Rp ' : '') + formatNum(c.starting_price) + ')')"
                                     ></option>
                                 </template>
                             </select>
@@ -124,7 +260,7 @@
 
                 {{-- Harga Deal Akhir --}}
                 <div>
-                    <label class="mb-1.5 block text-xs font-semibold text-zinc-400">Harga Deal Akhir (Coins)</label>
+                    <label class="mb-1.5 block text-xs font-semibold text-zinc-400" x-text="currency === 'cash' ? 'Harga Deal Akhir (Rupiah / Rp)' : 'Harga Deal Akhir (Coins)'"></label>
                     <input
                         id="auction-price-input"
                         type="number"
@@ -132,7 +268,8 @@
                         min="1"
                         required
                         placeholder="0"
-                        class="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 font-mono text-xl font-bold text-gold-400"
+                        class="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 font-mono text-xl font-bold"
+                        :class="currency === 'cash' ? 'text-emerald-400' : 'text-gold-400'"
                     >
                 </div>
 
@@ -144,11 +281,13 @@
                     </div>
                     <div class="flex items-center justify-between text-zinc-400">
                         <span>Harga Deal</span>
-                        <span class="font-mono font-bold text-amber-400" x-text="'-' + formatNum(price || 0) + ' Coins'"></span>
+                        <span class="font-mono font-bold"
+                              :class="currency === 'cash' ? 'text-emerald-400' : 'text-amber-400'"
+                              x-text="currency === 'cash' ? ('Rp ' + formatNum(price || 0) + ' (Uang Murni)') : ('-' + formatNum(price || 0) + ' Coins')"></span>
                     </div>
-                    <template x-if="winner">
+                    <template x-if="winner && currency === 'coins'">
                         <div class="flex items-center justify-between border-t border-zinc-800 pt-1.5">
-                            <span class="font-semibold text-zinc-300">Estimasi Sisa Saldo Pemenang</span>
+                            <span class="font-semibold text-zinc-300">Estimasi Sisa Saldo Koin Pemenang</span>
                             <span
                                 class="font-mono text-sm font-extrabold"
                                 :class="(winner.balance - (price || 0)) < 0 ? 'text-red-400' : 'text-emerald-400'"
@@ -156,18 +295,21 @@
                             ></span>
                         </div>
                     </template>
-                    <div x-show="winner && (winner.balance - (price || 0)) < 0" class="pt-1 text-[11px] font-semibold text-red-400">
-                        ⚠ Saldo pemenang tidak mencukupi untuk harga deal ini!
+                    <div x-show="currency === 'cash'" class="border-t border-zinc-800 pt-1.5 text-[11px] text-emerald-400">
+                        ✓ Uang murni: Saldo Coins peserta tetap utuh, dan detail Rekening/QRIS pembayaran otomatis muncul di HP pemenang.
+                    </div>
+                    <div x-show="winner && currency === 'coins' && (winner.balance - (price || 0)) < 0" class="pt-1 text-[11px] font-semibold text-red-400">
+                        ⚠ Saldo koin pemenang tidak mencukupi untuk harga deal ini!
                     </div>
                 </div>
 
                 <button
                     type="submit"
-                    :disabled="busy || !winner || !price || !item || (winner.balance - price) < 0"
-                    class="w-full rounded-xl bg-gold-500 py-3 text-sm font-bold text-zinc-950 transition hover:bg-gold-400 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                    Potong Saldo Pemenang
-                </button>
+                    :disabled="busy || !winner || !price || !item || (currency === 'coins' && (winner.balance - price) < 0)"
+                    class="w-full rounded-xl py-3 text-sm font-bold text-zinc-950 transition disabled:cursor-not-allowed disabled:opacity-40"
+                    :class="currency === 'cash' ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-gold-500 hover:bg-gold-400'"
+                    x-text="currency === 'cash' ? 'Simpan Pemenang Lelang (Uang Asli Rp)' : 'Potong Saldo Coins Pemenang'"
+                ></button>
             </form>
         </div>
 
@@ -214,8 +356,10 @@
                             <div class="mt-0.5 text-[11px] text-zinc-500" x-text="tx.time_text || tx.time || ''"></div>
                         </div>
                         <div class="text-right">
-                            <div class="font-mono text-sm font-bold text-amber-400" x-text="'-' + formatNum(tx.amount)"></div>
-                            <div class="text-[10px] text-zinc-500">Coins</div>
+                            <div class="font-mono text-sm font-bold"
+                                 :class="tx.is_rupiah ? 'text-emerald-400' : 'text-amber-400'"
+                                 x-text="tx.is_rupiah ? ('Rp ' + formatNum(tx.amount)) : ('-' + formatNum(tx.amount))"></div>
+                            <div class="text-[10px] text-zinc-500" x-text="tx.is_rupiah ? 'Uang Asli' : 'Coins'"></div>
                         </div>
                     </div>
                 </template>
@@ -228,28 +372,35 @@
         <div class="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-4">
             <div>
                 <h2 class="text-lg font-bold text-gold-400">Katalog Item Lelang (Reveal Control)</h2>
-                <p class="text-xs text-zinc-400">Setiap barang otomatis diberi ID unik (<strong class="font-mono text-zinc-200">BRG-01</strong>, dst.) dan otomatis ditandai <strong class="text-red-400">TERJUAL</strong> saat pemenang diinput.</p>
+                <p class="text-xs text-zinc-400">Setiap barang otomatis diberi ID unik (<strong class="font-mono text-zinc-200">BRG-01</strong>, dst.) dengan pilihan mata uang Poin atau Uang Asli (Rp).</p>
             </div>
         </div>
 
         {{-- Form Tambah Item Katalog --}}
-        <form method="POST" action="{{ route('admin.auction.catalog.store') }}" class="mt-5 grid gap-3 rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <form method="POST" action="{{ route('admin.auction.catalog.store') }}" class="mt-5 grid gap-3 rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 sm:grid-cols-2 lg:grid-cols-5">
             @csrf
             <div>
                 <label class="mb-1 block text-xs text-zinc-400">Nama Item *</label>
                 <input type="text" name="name" required placeholder="Contoh: Mystery Box #1" class="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-white">
             </div>
             <div>
-                <label class="mb-1 block text-xs text-zinc-400">Open Bid (Coins) *</label>
+                <label class="mb-1 block text-xs text-zinc-400">Mata Uang *</label>
+                <select name="currency" class="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-white">
+                    <option value="coins">🪙 Poin (Coins)</option>
+                    <option value="cash">💵 Uang Asli (Rp)</option>
+                </select>
+            </div>
+            <div>
+                <label class="mb-1 block text-xs text-zinc-400">Open Bid *</label>
                 <input type="number" name="starting_price" min="0" value="1000" required class="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-xs text-white">
             </div>
             <div>
-                <label class="mb-1 block text-xs text-zinc-400">Deskripsi Singkat (Opsional)</label>
+                <label class="mb-1 block text-xs text-zinc-400">Deskripsi Singkat</label>
                 <input type="text" name="description" placeholder="Benefit / keterangan hadiah" class="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-white">
             </div>
             <div class="flex items-end gap-2">
                 <div class="flex-1">
-                    <label class="mb-1 block text-xs text-zinc-400">URL Gambar (Opsional)</label>
+                    <label class="mb-1 block text-xs text-zinc-400">URL Gambar</label>
                     <input type="text" name="image_url" placeholder="https://..." class="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-white">
                 </div>
                 <button type="submit" class="rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-zinc-950 hover:bg-emerald-400">
@@ -275,20 +426,19 @@
                         <div class="flex items-center justify-between gap-2">
                             <div class="flex flex-wrap items-center gap-1.5">
                                 <span class="rounded bg-gold-500/20 px-2 py-0.5 font-mono text-[11px] font-extrabold text-gold-400" x-text="c.code"></span>
+                                <span
+                                    class="rounded px-2 py-0.5 text-[10px] font-bold uppercase"
+                                    :class="c.currency === 'cash' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'"
+                                    x-text="c.currency === 'cash' ? 'UANG ASLI (RP)' : 'COINS'"
+                                ></span>
                                 <template x-if="c.is_sold">
-                                    <span class="rounded-full border border-red-500/40 bg-red-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-300">
-                                        TERJUAL
-                                    </span>
+                                    <span class="rounded-full border border-red-500/40 bg-red-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-red-300">TERJUAL</span>
                                 </template>
                                 <template x-if="!c.is_sold && c.is_revealed">
-                                    <span class="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                                        DIBUKA
-                                    </span>
+                                    <span class="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-400">DIBUKA</span>
                                 </template>
                                 <template x-if="!c.is_sold && !c.is_revealed">
-                                    <span class="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                                        TERSEMBUNYI
-                                    </span>
+                                    <span class="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-[10px] font-bold uppercase text-zinc-400">TERSEMBUNYI</span>
                                 </template>
                             </div>
 
@@ -305,8 +455,8 @@
 
                         <div class="mt-3 text-base font-bold text-white" x-text="c.name"></div>
                         <p x-show="c.description" class="mt-1 text-xs text-zinc-400" x-text="c.description"></p>
-                        <div class="mt-2 font-mono text-xs font-bold text-gold-400">
-                            Open Bid: <span x-text="formatNum(c.starting_price || 0) + ' Coins'"></span>
+                        <div class="mt-2 font-mono text-xs font-bold" :class="c.currency === 'cash' ? 'text-emerald-400' : 'text-gold-400'">
+                            Open Bid: <span x-text="c.currency === 'cash' ? ('Rp ' + formatNum(c.starting_price || 0)) : (formatNum(c.starting_price || 0) + ' Coins')"></span>
                         </div>
 
                         <template x-if="c.is_sold">
@@ -316,13 +466,13 @@
                                     Pemenang: <strong x-text="(c.winner_name || '-') + (c.winner_nim ? ' (#' + c.winner_nim + ')' : '')"></strong>
                                 </div>
                                 <div class="font-mono text-amber-400">
-                                    Harga Deal: <strong x-text="formatNum(c.sold_price || 0) + ' Coins'"></strong>
+                                    Harga Deal: <strong x-text="(c.currency === 'cash' ? 'Rp ' : '') + formatNum(c.sold_price || 0) + (c.currency === 'cash' ? '' : ' Coins')"></strong>
                                 </div>
                             </div>
                         </template>
                     </div>
 
-                    <div class="mt-4 flex items-center gap-2 border-t border-zinc-800 pt-3">
+                    <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-3">
                         <form method="POST" :action="`{{ url('/admin/auction/catalog') }}/${c.id}/toggle`" class="flex-1">
                             @csrf
                             <button
@@ -334,10 +484,18 @@
                         </form>
                         <button
                             type="button"
+                            @click="pushCatalogCardToLive(c)"
+                            class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-2 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20"
+                            title="Tampilkan ke Big Screen Lelang"
+                        >
+                            📺 Layar
+                        </button>
+                        <button
+                            type="button"
                             @click="selectCatalogItem(c)"
                             class="rounded-xl border px-3 py-2 text-xs font-bold"
                             :class="c.is_sold ? 'border-zinc-700 bg-zinc-900 text-zinc-400' : 'border-gold-500/40 bg-zinc-900 text-gold-400 hover:bg-gold-500/15'"
-                            x-text="c.is_sold ? 'Terjual ✓' : 'Lelang →'"
+                            x-text="c.is_sold ? 'Terjual ✓' : 'Deal →'"
                         ></button>
                     </div>
                 </div>
@@ -355,6 +513,7 @@ function auctionDesk(cfg) {
         results: [],
         searching: false,
         winner: null,
+        currency: 'coins',
         itemCode: '',
         item: '',
         price: '',
@@ -365,13 +524,118 @@ function auctionDesk(cfg) {
         errorMsg: '',
         idemKey: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
 
+        // Live Bidding State
+        live: cfg.live || { active: false },
+        liveForm: {
+            code: cfg.live?.code || '',
+            name: cfg.live?.name || '',
+            description: cfg.live?.description || '',
+            image_url: cfg.live?.image_url || '',
+            currency: cfg.live?.currency || 'coins',
+            current_bid: cfg.live?.current_bid || 0,
+            bidder_nim: cfg.live?.bidder_nim || '',
+            bidder_name: cfg.live?.bidder_name || '',
+        },
+        liveResults: [],
+        liveBusy: false,
+        liveToast: '',
+
         init() {},
+
+        loadItemToLive(id) {
+            const c = this.catalog.find(x => x.id === id);
+            if (!c) return;
+            this.liveForm.code = c.code || '';
+            this.liveForm.name = c.name || '';
+            this.liveForm.description = c.description || '';
+            this.liveForm.image_url = c.image_url || '';
+            this.liveForm.currency = c.currency || 'coins';
+            this.liveForm.current_bid = Number(c.starting_price || 0);
+            this.liveForm.bidder_nim = '';
+            this.liveForm.bidder_name = '';
+        },
+
+        async pushCatalogCardToLive(c) {
+            this.loadItemToLive(c.id);
+            await this.pushLive(true, false);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+
+        async searchLiveBidder() {
+            const q = (this.liveForm.bidder_nim || '').trim();
+            if (!q) { this.liveResults = []; return; }
+            const res = await fetch(`${cfg.searchUrl}?q=${encodeURIComponent(q)}`, { headers: { 'Accept': 'application/json' } });
+            if (res.ok) {
+                const list = (await res.json()).results || [];
+                this.liveResults = list;
+                if (/^\d{3}$/.test(q) && list.length === 1 && list[0].nim_code === q) {
+                    this.pickLiveBidder(list[0]);
+                }
+            }
+        },
+
+        async searchLiveBidderByName() {
+            const q = (this.liveForm.bidder_name || '').trim();
+            if (q.length < 2) { this.liveResults = []; return; }
+            const res = await fetch(`${cfg.searchUrl}?q=${encodeURIComponent(q)}`, { headers: { 'Accept': 'application/json' } });
+            if (res.ok) {
+                this.liveResults = (await res.json()).results || [];
+            }
+        },
+
+        pickLiveBidder(p) {
+            this.liveForm.bidder_nim = p.nim_code;
+            this.liveForm.bidder_name = p.name;
+            this.liveResults = [];
+        },
+
+        async pushLive(active, isSold = false) {
+            this.liveBusy = true;
+            try {
+                const res = await window.apiPost(cfg.liveUrl, {
+                    active: active,
+                    is_sold: isSold,
+                    ...this.liveForm
+                });
+                this.live = res.live;
+                this.liveToast = res.message;
+                setTimeout(() => this.liveToast = '', 3000);
+            } catch (e) {
+                alert(e.message);
+            } finally {
+                this.liveBusy = false;
+            }
+        },
+
+        dealFromLive() {
+            this.itemCode = this.liveForm.code;
+            this.item = this.liveForm.name;
+            this.currency = this.liveForm.currency;
+            this.price = this.liveForm.current_bid;
+            if (this.liveForm.bidder_nim) {
+                this.winner = {
+                    nim_code: this.liveForm.bidder_nim,
+                    name: this.liveForm.bidder_name || ('#' + this.liveForm.bidder_nim),
+                    group_name: '',
+                    balance: 999999999
+                };
+                // Ambil saldo real akun pemenang
+                fetch(`${cfg.searchUrl}?q=${encodeURIComponent(this.liveForm.bidder_nim)}`, { headers: { 'Accept': 'application/json' } })
+                    .then(r => r.json())
+                    .then(d => {
+                        const exact = (d.results || []).find(x => x.nim_code === this.liveForm.bidder_nim);
+                        if (exact) this.winner = exact;
+                    });
+            }
+            document.getElementById('auction-price-input')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        },
 
         selectCatalogItem(c) {
             this.itemCode = c.code || '';
             this.item = c.name || '';
+            this.currency = c.currency || 'coins';
             this.price = c.starting_price || '';
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            document.getElementById('auction-price-input')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
             setTimeout(() => document.getElementById('auction-price-input')?.focus(), 250);
         },
 
@@ -392,7 +656,8 @@ function auctionDesk(cfg) {
             if (!query) { this.results = []; return; }
             this.searching = true;
             try {
-                const res = await fetch(`${cfg.searchUrl}?checked_in=1&q=${encodeURIComponent(query)}`, {
+                // Tanpa checked_in=1 agar siapa pun pemilik akun bisa ngebid
+                const res = await fetch(`${cfg.searchUrl}?q=${encodeURIComponent(query)}`, {
                     headers: { 'Accept': 'application/json' }
                 });
                 if (res.ok) {
@@ -409,13 +674,17 @@ function auctionDesk(cfg) {
 
         async submitAuction() {
             const label = (this.itemCode ? `[${this.itemCode}] ` : '') + this.item;
-            if (!confirm(`Potong saldo ${this.winner.name} (#${this.winner.nim_code}) sebesar ${formatNum(this.price)} Coins untuk "${label}"?`)) return;
+            const nominalText = this.currency === 'cash'
+                ? `Rp ${formatNum(this.price)} (Uang Asli)`
+                : `${formatNum(this.price)} Coins`;
+            if (!confirm(`Tetapkan ${this.winner.name} (#${this.winner.nim_code}) sebagai pemenang "${label}" senilai ${nominalText}?`)) return;
             this.busy = true;
             this.errorMsg = '';
             try {
                 const res = await window.apiPost(cfg.deductUrl, {
                     winner: this.winner.nim_code,
                     price: Number(this.price),
+                    currency: this.currency,
                     item_code: this.itemCode,
                     item: this.item,
                     idempotency_key: this.idemKey
@@ -423,11 +692,11 @@ function auctionDesk(cfg) {
                 this.successMsg = res.message;
                 this.recent.unshift(res.transaction);
 
-                // Langsung tandai TERJUAL di kartu katalog bawah secara real-time
                 if (res.sold_code) {
                     const target = this.catalog.find(c => (c.code || '').toUpperCase() === res.sold_code.toUpperCase());
                     if (target) {
                         target.is_sold = true;
+                        target.currency = res.currency;
                         target.winner_name = res.winner_name;
                         target.winner_nim = res.winner_nim;
                         target.sold_price = res.sold_price;

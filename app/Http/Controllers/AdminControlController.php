@@ -134,25 +134,27 @@ class AdminControlController extends Controller
     public function auction(): View
     {
         $recent = Transaction::query()
-            ->where('type', Transaction::TYPE_AUCTION)
+            ->whereIn('type', [Transaction::TYPE_AUCTION, Transaction::TYPE_AUCTION_CASH])
             ->with('user:nim_code,name')
-            ->latest('id')->limit(15)->get()
+            ->latest('id')->limit(20)->get()
             ->map(function (Transaction $t) {
                 $base   = TransactionPresenter::forAdmin($t);
                 $winner = $t->user ? "{$t->user->name} (#{$t->user_nim_code})" : "#{$t->user_nim_code}";
-                $item   = $t->note ?? $t->description ?? ($base['title'] ?? 'Item Lelang');
+                $item   = $t->description ?? ($base['title'] ?? 'Item Lelang');
 
                 return array_merge($base, [
                     'item_label'  => $item,
                     'winner_text' => $winner,
+                    'is_rupiah'   => $t->type === Transaction::TYPE_AUCTION_CASH,
                     'time_text'   => $t->created_at?->format('d/m/Y H:i:s') ?? ($base['time'] ?? ''),
                 ]);
             })->values();
 
         return view('admin.auction', [
-            'recent'  => $recent,
-            'frozen'  => Setting::isFrozen(),
-            'catalog' => $this->readCatalog(),
+            'recent'      => $recent,
+            'frozen'      => Setting::isFrozen(),
+            'catalog'     => $this->readCatalog(),
+            'liveAuction' => self::getLiveAuctionState(),
         ]);
     }
 
@@ -161,6 +163,7 @@ class AdminControlController extends Controller
         $data = $request->validate([
             'winner'          => ['required', 'string', 'max:10'],
             'price'           => ['required', 'integer', 'min:1', 'max:1000000000'],
+            'currency'        => ['nullable', 'in:coins,cash'],
             'item'            => ['required', 'string', 'max:200'],
             'item_code'       => ['nullable', 'string', 'max:30'],
             'idempotency_key' => ['nullable', 'string', 'max:64'],
@@ -171,30 +174,52 @@ class AdminControlController extends Controller
             'item.required'   => 'Keterangan item lelang wajib diisi.',
         ]);
 
+        $currency  = $data['currency'] ?? 'coins';
         $itemCode  = strtoupper(trim((string) ($data['item_code'] ?? '')));
         $itemTitle = trim($data['item']);
         $fullLabel = ($itemCode !== '' && ! str_starts_with($itemTitle, "[{$itemCode}]"))
             ? "[{$itemCode}] {$itemTitle}"
             : $itemTitle;
 
-        $tx = $this->transfers->deductForAuction(
-            $data['winner'],
-            (int) $data['price'],
-            $fullLabel,
-            $request->user()->nim_code,
-            $data['idempotency_key'] ?? null
-        );
+        $winnerCode = User::normalizeCode($data['winner']);
+        $winnerUser = User::query()->whereKey($winnerCode)->first();
+        if (! $winnerUser) {
+            throw new BusinessRuleException("Akun dengan kode #{$winnerCode} tidak ditemukan.");
+        }
+
+        if ($currency === 'cash') {
+            $tx = DB::transaction(function () use ($winnerUser, $data, $fullLabel, $request) {
+                return Transaction::create([
+                    'type'               => Transaction::TYPE_AUCTION_CASH,
+                    'user_nim_code'      => $winnerUser->nim_code,
+                    'amount'             => (int) $data['price'],
+                    'user_balance_after' => (int) $winnerUser->balance,
+                    'description'        => $fullLabel.' [Uang Asli Rp '.number_format((int) $data['price'], 0, ',', '.').']',
+                    'created_by'         => $request->user()->nim_code,
+                    'idempotency_key'    => $data['idempotency_key'] ?? null,
+                ]);
+            });
+        } else {
+            $tx = $this->transfers->deductForAuction(
+                $winnerCode,
+                (int) $data['price'],
+                $fullLabel,
+                $request->user()->nim_code,
+                $data['idempotency_key'] ?? null
+            );
+        }
 
         $tx->loadMissing('user:nim_code,name');
 
-        // Tandai barang di katalog sebagai TERJUAL beserta nama pemenang & harga deal
+        // Tandai barang di katalog sebagai TERJUAL
         if ($itemCode !== '') {
             $catalog = $this->readCatalog();
             $updated = false;
             foreach ($catalog as &$c) {
                 if (strtoupper((string) ($c['code'] ?? '')) === $itemCode) {
                     $c['is_sold']     = true;
-                    $c['winner_name'] = $tx->user?->name ?? 'Peserta';
+                    $c['currency']    = $currency;
+                    $c['winner_name'] = $tx->user?->name ?? $winnerUser->name;
                     $c['winner_nim']  = $tx->user_nim_code;
                     $c['sold_price']  = (int) $tx->amount;
                     $updated          = true;
@@ -208,21 +233,35 @@ class AdminControlController extends Controller
             }
         }
 
-        $winnerText = $tx->user ? "{$tx->user->name} (#{$tx->user_nim_code})" : "#{$tx->user_nim_code}";
+        // Jika item yang baru terjual sedang tampil di Live Big Screen Lelang, tandai statusnya DEAL / TERJUAL
+        $live = self::getLiveAuctionState();
+        if (($live['active'] ?? false) && strtoupper((string) ($live['code'] ?? '')) === $itemCode && $itemCode !== '') {
+            $live['is_sold']     = true;
+            $live['current_bid'] = (int) $tx->amount;
+            $live['bidder_name'] = $tx->user?->name ?? $winnerUser->name;
+            $live['bidder_nim']  = $tx->user_nim_code;
+            Setting::putValue('live_auction_state', json_encode($live, JSON_UNESCAPED_UNICODE));
+        }
+
+        $winnerText = "{$winnerUser->name} (#{$tx->user_nim_code})";
+        $isRupiah   = $currency === 'cash';
         $txPayload  = array_merge(TransactionPresenter::forAdmin($tx), [
             'item_label'  => $fullLabel,
             'winner_text' => $winnerText,
+            'is_rupiah'   => $isRupiah,
             'time_text'   => $tx->created_at?->format('d/m/Y H:i:s') ?? now()->format('d/m/Y H:i:s'),
         ]);
 
-        $message = "Potongan lelang berhasil ({$fullLabel}): {$winnerText} -"
-            .$this->formatNumber($tx->amount).'. Sisa saldo: '.$this->formatNumber((int) $tx->user_balance_after).'.';
+        $message = $isRupiah
+            ? "Lelang Uang Asli berhasil ({$fullLabel}): {$winnerText} menang senilai Rp ".$this->formatNumber($tx->amount).' (Saldo koin tidak dipotong).'
+            : "Potongan lelang berhasil ({$fullLabel}): {$winnerText} -".$this->formatNumber($tx->amount).' Coins. Sisa saldo: '.$this->formatNumber((int) $tx->user_balance_after).'.';
 
         return $this->done($request, $message, [
             'transaction' => $txPayload,
             'balance'     => $tx->user_balance_after,
             'sold_code'   => $itemCode,
-            'winner_name' => $tx->user?->name ?? 'Peserta',
+            'currency'    => $currency,
+            'winner_name' => $winnerUser->name,
             'winner_nim'  => $tx->user_nim_code,
             'sold_price'  => (int) $tx->amount,
         ], redirect()->route('admin.auction'));
@@ -236,6 +275,7 @@ class AdminControlController extends Controller
             'name'           => ['required', 'string', 'max:150'],
             'description'    => ['nullable', 'string', 'max:500'],
             'starting_price' => ['required', 'integer', 'min:0', 'max:1000000000'],
+            'currency'       => ['nullable', 'in:coins,cash'],
             'image_url'      => ['nullable', 'string', 'max:500'],
         ], [
             'name.required'           => 'Nama item katalog wajib diisi.',
@@ -259,6 +299,7 @@ class AdminControlController extends Controller
             'name'           => trim($data['name']),
             'description'    => trim((string) ($data['description'] ?? '')),
             'starting_price' => (int) $data['starting_price'],
+            'currency'       => $data['currency'] ?? 'coins',
             'image_url'      => trim((string) ($data['image_url'] ?? '')),
             'is_revealed'    => false,
             'is_sold'        => false,
@@ -267,7 +308,7 @@ class AdminControlController extends Controller
 
         $this->writeCatalog($items);
 
-        return $this->done($request, "Item [{$code}] \"{$data['name']}\" ditambahkan ke katalog (status: Tersembunyi).", ['catalog' => $items]);
+        return $this->done($request, "Item [{$code}] \"{$data['name']}\" ditambahkan ke katalog.", ['catalog' => $items]);
     }
 
     public function catalogToggle(Request $request, string $id): JsonResponse|RedirectResponse
@@ -590,5 +631,144 @@ class AdminControlController extends Controller
             ->when($q !== '', fn ($qq) => $qq->involving(User::normalizeCode($q)))
             ->when($from !== '', fn ($qq) => $qq->where('created_at', '>=', \Illuminate\Support\Carbon::parse($from)))
             ->when($to !== '', fn ($qq) => $qq->where('created_at', '<=', \Illuminate\Support\Carbon::parse($to)));
+    }
+
+    // ================================================================ Live Bidding Panggung & Big Screen Lelang
+
+    public static function getLiveAuctionState(): array
+    {
+        $raw   = Setting::getValue('live_auction_state', '{}');
+        $state = json_decode((string) $raw, true);
+
+        return is_array($state) ? $state : ['active' => false];
+    }
+
+    public function updateLiveAuction(Request $request): JsonResponse|RedirectResponse
+    {
+        $data = $request->validate([
+            'active'      => ['required', 'boolean'],
+            'code'        => ['nullable', 'string', 'max:30'],
+            'name'        => ['nullable', 'string', 'max:150'],
+            'description' => ['nullable', 'string', 'max:500'],
+            'image_url'   => ['nullable', 'string', 'max:500'],
+            'currency'    => ['nullable', 'in:coins,cash'],
+            'current_bid' => ['nullable', 'integer', 'min:0', 'max:1000000000'],
+            'bidder_nim'  => ['nullable', 'string', 'max:15'],
+            'bidder_name' => ['nullable', 'string', 'max:120'],
+            'is_sold'     => ['nullable', 'boolean'],
+        ]);
+
+        if (! $request->boolean('active')) {
+            $state = ['active' => false];
+            Setting::putValue('live_auction_state', json_encode($state));
+
+            return $this->done($request, 'Layar Big Screen Lelang ditutup (standby).', ['live' => $state]);
+        }
+
+        $bidderNim  = strtoupper(trim((string) ($data['bidder_nim'] ?? '')));
+        $bidderName = trim((string) ($data['bidder_name'] ?? ''));
+
+        if ($bidderNim !== '' && $bidderName === '') {
+            $u = User::query()->whereKey(User::normalizeCode($bidderNim))->first();
+            if ($u) {
+                $bidderName = $u->name;
+            }
+        }
+
+        $state = [
+            'active'      => true,
+            'code'        => strtoupper(trim((string) ($data['code'] ?? 'LIVE'))),
+            'name'        => trim((string) ($data['name'] ?? 'Item Lelang')),
+            'description' => trim((string) ($data['description'] ?? '')),
+            'image_url'   => trim((string) ($data['image_url'] ?? '')),
+            'currency'    => $data['currency'] ?? 'coins',
+            'current_bid' => (int) ($data['current_bid'] ?? 0),
+            'bidder_nim'  => $bidderNim,
+            'bidder_name' => $bidderName,
+            'is_sold'     => $request->boolean('is_sold', false),
+            'updated_at'  => now()->toIso8601String(),
+        ];
+
+        Setting::putValue('live_auction_state', json_encode($state, JSON_UNESCAPED_UNICODE));
+
+        return $this->done($request, 'Big Screen Lelang & HP Peserta diperbarui secara real-time.', ['live' => $state]);
+    }
+
+    public function bigScreenAuctionShow(): View
+    {
+        return view('bigscreen-auction', [
+            'initialState' => self::getLiveAuctionState(),
+            'stateUrl'     => route('bigscreen.auction.state'),
+        ]);
+    }
+
+    public function bigScreenAuctionState(): JsonResponse
+    {
+        return response()
+            ->json(self::getLiveAuctionState())
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    }
+
+    // ================================================================ Kustomisasi Pembayaran Uang Asli (Rekening & QR)
+
+    public static function getPaymentConfig(): array
+    {
+        $raw = Setting::getValue('auction_payment_config', '{}');
+        $cfg = json_decode((string) $raw, true);
+
+        return array_merge([
+            'qris_image_url' => '',
+            'qris_label'     => 'QRIS Panitia Welcome Party 2026',
+            'accounts'       => [],
+            'whatsapp'       => '',
+            'instructions'   => 'Silakan transfer sesuai nominal deal lelang, lalu kirim bukti pembayaran ke panitia.',
+        ], is_array($cfg) ? $cfg : []);
+    }
+
+    public function paymentSettings(): View
+    {
+        return view('admin.payment-settings', [
+            'config' => self::getPaymentConfig(),
+        ]);
+    }
+
+    public function savePaymentSettings(Request $request): JsonResponse|RedirectResponse
+    {
+        $data = $request->validate([
+            'qris_image_url' => ['nullable', 'string', 'max:500'],
+            'qris_label'     => ['nullable', 'string', 'max:120'],
+            'whatsapp'       => ['nullable', 'string', 'max:30'],
+            'instructions'   => ['nullable', 'string', 'max:600'],
+            'accounts'       => ['nullable', 'array'],
+            'accounts.*.provider' => ['nullable', 'string', 'max:60'],
+            'accounts.*.number'   => ['nullable', 'string', 'max:60'],
+            'accounts.*.holder'   => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $cleanAccounts = [];
+        foreach (($data['accounts'] ?? []) as $acc) {
+            $prov = trim((string) ($acc['provider'] ?? ''));
+            $num  = trim((string) ($acc['number'] ?? ''));
+            $hold = trim((string) ($acc['holder'] ?? ''));
+            if ($prov !== '' || $num !== '') {
+                $cleanAccounts[] = [
+                    'provider' => $prov,
+                    'number'   => $num,
+                    'holder'   => $hold,
+                ];
+            }
+        }
+
+        $config = [
+            'qris_image_url' => trim((string) ($data['qris_image_url'] ?? '')),
+            'qris_label'     => trim((string) ($data['qris_label'] ?? 'QRIS Panitia')),
+            'accounts'       => $cleanAccounts,
+            'whatsapp'       => preg_replace('/[^0-9]/', '', (string) ($data['whatsapp'] ?? '')),
+            'instructions'   => trim((string) ($data['instructions'] ?? '')),
+        ];
+
+        Setting::putValue('auction_payment_config', json_encode($config, JSON_UNESCAPED_UNICODE));
+
+        return $this->done($request, 'Pengaturan Rekening, QRIS & Halaman Pembayaran Pemenang berhasil disimpan.');
     }
 }

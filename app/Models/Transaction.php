@@ -12,6 +12,7 @@ class Transaction extends Model
     public const TYPE_INITIAL  = 'initial';
     public const TYPE_TRANSFER = 'transfer';
     public const TYPE_AUCTION  = 'auction';
+    public const TYPE_AUCTION_CASH = 'auction_cash';
 
     protected $fillable = [
         'type', 'sender_nim_code', 'receiver_nim_code', 'user_nim_code',
