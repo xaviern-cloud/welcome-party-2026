@@ -59,14 +59,17 @@
                 </div>
             </a>
 
+            {{-- Desktop Nav Admin --}}
             @if(auth()->user()->isAdmin())
             <div class="hidden items-center gap-1 md:flex">
                 <a href="{{ route('admin.dashboard') }}" class="rounded-lg px-3 py-1.5 text-sm font-medium {{ request()->routeIs('admin.dashboard') ? 'bg-gold-500/15 text-gold-400' : 'text-zinc-400 hover:text-white' }}">Dashboard</a>
                 <a href="{{ route('admin.checkin.index') }}" class="rounded-lg px-3 py-1.5 text-sm font-medium {{ request()->routeIs('admin.checkin.*') ? 'bg-gold-500/15 text-gold-400' : 'text-zinc-400 hover:text-white' }}">Check-In</a>
                 <a href="{{ route('admin.pre-event.index') }}" class="rounded-lg px-3 py-1.5 text-sm font-medium {{ request()->routeIs('admin.pre-event.*') || request()->routeIs('admin.import.*') ? 'bg-gold-500/15 text-gold-400' : 'text-zinc-400 hover:text-white' }}">Pra-Acara</a>
                 <a href="{{ route('admin.auction') }}" class="rounded-lg px-3 py-1.5 text-sm font-medium {{ request()->routeIs('admin.auction') ? 'bg-gold-500/15 text-gold-400' : 'text-zinc-400 hover:text-white' }}">Lelang</a>
+                <a href="{{ route('admin.showcase-voting.index') }}" class="rounded-lg px-3 py-1.5 text-sm font-medium {{ request()->routeIs('admin.showcase-voting.*') ? 'bg-gold-500/15 text-gold-400' : 'text-zinc-400 hover:text-white' }}">Voting Show</a>
                 <a href="{{ route('admin.transactions') }}" class="rounded-lg px-3 py-1.5 text-sm font-medium {{ request()->routeIs('admin.transactions') ? 'bg-gold-500/15 text-gold-400' : 'text-zinc-400 hover:text-white' }}">Audit</a>
                 <a href="{{ route('bigscreen') }}" target="_blank" class="ml-1 rounded-lg border border-gold-500/40 bg-gold-500/10 px-3 py-1.5 text-xs font-semibold text-gold-400 hover:bg-gold-500/20">Big Screen ↗</a>
+                <a href="{{ route('bigscreen.auction') }}" target="_blank" class="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20">Layar Lelang ↗</a>
             </div>
             @endif
 
@@ -84,21 +87,18 @@
             </div>
         </div>
 
-       {{-- Mobile Nav Admin --}}
+        {{-- Mobile Nav Admin --}}
         @if(auth()->user()->isAdmin())
         <div class="flex gap-1 overflow-x-auto border-t border-zinc-800/60 px-4 py-2 md:hidden">
             <a href="{{ route('admin.dashboard') }}" class="whitespace-nowrap rounded-lg px-2.5 py-1 text-xs {{ request()->routeIs('admin.dashboard') ? 'bg-gold-500/20 text-gold-400' : 'text-zinc-400' }}">Dashboard</a>
             <a href="{{ route('admin.checkin.index') }}" class="whitespace-nowrap rounded-lg px-2.5 py-1 text-xs {{ request()->routeIs('admin.checkin.*') ? 'bg-gold-500/20 text-gold-400' : 'text-zinc-400' }}">Check-In</a>
             <a href="{{ route('admin.pre-event.index') }}" class="whitespace-nowrap rounded-lg px-2.5 py-1 text-xs {{ request()->routeIs('admin.pre-event.*') || request()->routeIs('admin.import.*') ? 'bg-gold-500/20 text-gold-400' : 'text-zinc-400' }}">Pra-Acara</a>
             <a href="{{ route('admin.auction') }}" class="whitespace-nowrap rounded-lg px-2.5 py-1 text-xs {{ request()->routeIs('admin.auction') ? 'bg-gold-500/20 text-gold-400' : 'text-zinc-400' }}">Lelang</a>
+            <a href="{{ route('admin.showcase-voting.index') }}" class="whitespace-nowrap rounded-lg px-2.5 py-1 text-xs {{ request()->routeIs('admin.showcase-voting.*') ? 'bg-gold-500/20 text-gold-400' : 'text-zinc-400' }}">Voting Show</a>
             <a href="{{ route('admin.payment.settings') }}" class="whitespace-nowrap rounded-lg px-2.5 py-1 text-xs {{ request()->routeIs('admin.payment.*') ? 'bg-gold-500/20 text-gold-400' : 'text-zinc-400' }}">Pembayaran</a>
             <a href="{{ route('admin.transactions') }}" class="whitespace-nowrap rounded-lg px-2.5 py-1 text-xs {{ request()->routeIs('admin.transactions') ? 'bg-gold-500/20 text-gold-400' : 'text-zinc-400' }}">Audit</a>
             <a href="{{ route('bigscreen') }}" target="_blank" class="whitespace-nowrap rounded-lg border border-gold-500/40 px-2.5 py-1 text-xs text-gold-400">Leaderboard</a>
             <a href="{{ route('bigscreen.auction') }}" target="_blank" class="whitespace-nowrap rounded-lg border border-emerald-500/40 px-2.5 py-1 text-xs text-emerald-300">Layar Lelang</a>
-            <a href="{{ route('admin.showcase-voting.index') }}"
-            class="rounded-xl px-3 py-1.5 text-xs font-semibold transition {{ request()->routeIs('admin.showcase-voting.*') ? 'bg-gold-500 text-zinc-950 font-bold' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white' }}">
-                Voting Show
-            </a>
         </div>
         @endif
     </nav>
@@ -135,7 +135,7 @@
     @auth
     @if(auth()->user()->isParticipant())
     <div class="fixed bottom-0 left-0 right-0 z-40 border-t border-zinc-800 bg-zinc-950/95 backdrop-blur-md">
-        <div class="mx-auto grid max-w-md grid-cols-3">
+        <div class="mx-auto grid max-w-md grid-cols-4">
             <a href="{{ route('participant.dashboard') }}" class="flex flex-col items-center justify-center py-3 text-xs font-medium {{ request()->routeIs('participant.dashboard') ? 'text-gold-400' : 'text-zinc-400 hover:text-white' }}">
                 <svg class="mb-1 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
                 Dompet
@@ -148,9 +148,8 @@
                 <svg class="mb-1 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
                 Katalog
             </a>
-
-            <a href="{{ route('participant.voting') }}"
-            class="rounded-xl px-3 py-1.5 text-xs font-semibold transition {{ request()->routeIs('participant.voting*') ? 'bg-gold-500 text-zinc-950 font-bold' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white' }}">
+            <a href="{{ route('participant.voting') }}" class="flex flex-col items-center justify-center py-3 text-xs font-medium {{ request()->routeIs('participant.voting*') ? 'text-gold-400' : 'text-zinc-400 hover:text-white' }}">
+                <svg class="mb-1 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
                 Voting
             </a>
         </div>
