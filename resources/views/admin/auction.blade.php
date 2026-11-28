@@ -23,6 +23,108 @@
     x-init="init()"
     class="space-y-8"
 >
+    {{-- BAGIAN -1: KONTROL SESI VOTING & TRANSFER JURU BICARA MEJA --}}
+    <div
+        x-data="{
+            overview: @js($tableOverview ?? ['status' => 'idle', 'tables' => [], 'unfinalized_count' => 0]),
+            busyTable: false,
+            async controlSession(action) {
+                const labels = {
+                    start: 'Buka Sesi Voting & Transfer Juru Bicara Meja sekarang?',
+                    close: 'Tutup sesi sekarang? Peserta yang belum mentransfer saldo ke Juru Bicara akan DIKUNCI dari Katalog Lelang.',
+                    reopen: 'Buka kembali sesi Juru Bicara Meja?',
+                    reset: 'Reset seluruh data voting dan status transfer sesi meja?'
+                };
+                if (!confirm(labels[action])) return;
+                this.busyTable = true;
+                try {
+                    const res = await window.apiPost('{{ route('admin.table-session.control') }}', { action });
+                    this.overview = res.overview;
+                } catch (e) { alert(e.message); }
+                finally { this.busyTable = false; }
+            },
+            init() {
+                setInterval(async () => {
+                    try {
+                        const r = await fetch('{{ route('admin.table-session.status') }}', { headers: { 'Accept': 'application/json' } });
+                        if (r.ok) this.overview = await r.json();
+                    } catch (e) {}
+                }, 3000);
+            }
+        }"
+        x-init="init()"
+        class="rounded-2xl border border-amber-500/40 bg-zinc-900/90 p-6 shadow-xl"
+    >
+        <div class="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-4">
+            <div>
+                <div class="flex items-center gap-2">
+                    <span class="rounded px-2 py-0.5 text-[11px] font-extrabold uppercase"
+                          :class="overview.status === 'open' ? 'bg-emerald-500/20 text-emerald-300' : (overview.status === 'closed' ? 'bg-red-500/20 text-red-300' : 'bg-zinc-800 text-zinc-400')"
+                          x-text="overview.status === 'open' ? 'SESI DIBUKA' : (overview.status === 'closed' ? 'SESI DITUTUP (KATALOG TERKUNCI BAGI YG BELUM)' : 'STANDBY')"></span>
+                    <h2 class="text-lg font-bold text-white">Sesi Juru Bicara Meja & Pooling Saldo</h2>
+                </div>
+                <p class="mt-0.5 text-xs text-zinc-400">
+                    Perintahkan setiap meja melakukan voting juru bicara & transfer 100% saldo.
+                    <strong class="text-amber-300" x-show="overview.unfinalized_count > 0" x-text="'Meja belum final: ' + overview.unfinalized_count + ' dari ' + overview.total_tables + ' meja.'"></strong>
+                    <strong class="text-emerald-400" x-show="overview.total_tables > 0 && overview.unfinalized_count === 0">Semua meja sudah final! ✓</strong>
+                </p>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+                <button type="button" @click="controlSession('start')" :disabled="busyTable" class="rounded-xl bg-emerald-500 px-3.5 py-2 text-xs font-extrabold text-zinc-950 hover:bg-emerald-400">
+                    ▶ Mulai Sesi Voting & Transfer
+                </button>
+                <button type="button" @click="controlSession('close')" :disabled="busyTable || overview.status !== 'open'" class="rounded-xl bg-red-500 px-3.5 py-2 text-xs font-extrabold text-white hover:bg-red-400 disabled:opacity-40">
+                    🔒 Tutup Sesi & Kunci Katalog
+                </button>
+                <button type="button" x-show="overview.status === 'closed'" @click="controlSession('reopen')" :disabled="busyTable" class="rounded-xl border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs font-bold text-amber-300">
+                    Buka Kembali
+                </button>
+                <button type="button" @click="controlSession('reset')" :disabled="busyTable" class="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-zinc-400 hover:text-white">
+                    Reset
+                </button>
+            </div>
+        </div>
+
+        <template x-if="overview.tables.length === 0">
+            <div class="py-6 text-center text-xs text-zinc-500">
+                Belum ada meja yang diatur. Atur pembagian meja terlebih dahulu di menu <a href="{{ route('admin.pre-event.index') }}" class="text-gold-400 underline">Pra-Acara → Table Seating</a>.
+            </div>
+        </template>
+
+        <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <template x-for="t in overview.tables" :key="t.id">
+                <div class="rounded-xl border p-3.5 text-xs"
+                     :class="t.is_finalized ? 'border-emerald-500/40 bg-emerald-950/20' : 'border-amber-500/40 bg-zinc-950'">
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-white" x-text="t.name"></span>
+                        <span class="rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase"
+                              :class="t.is_finalized ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'"
+                              x-text="t.is_finalized ? 'FINAL ✓' : 'BELUM FINAL'"></span>
+                    </div>
+
+                    <div class="mt-2 space-y-1 text-[11px] text-zinc-300">
+                        <div>Voting: <strong x-text="t.votes_cast + '/' + t.votes_required"></strong> suara</div>
+                        <div>
+                            Juru Bicara:
+                            <strong class="text-gold-400" x-text="t.spokesperson_name ? (t.spokesperson_name + ' (#' + t.spokesperson_nim + ')') : 'Belum terpilih'"></strong>
+                        </div>
+                        <div x-show="t.spokesperson_nim">
+                            Total Saldo Juru Bicara: <strong class="font-mono text-emerald-400" x-text="formatNum(t.spokesperson_bal) + ' Coins'"></strong>
+                        </div>
+                    </div>
+
+                    <template x-if="!t.is_finalized && t.pending_members.length > 0">
+                        <div class="mt-2.5 rounded-lg border border-red-500/30 bg-red-950/30 p-2 text-[10px] text-red-200">
+                            <span class="font-bold">Belum transfer:</span>
+                            <span x-text="t.pending_members.join(', ')"></span>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
+    </div>
+
     {{-- BAGIAN 0: KONTROL LIVE BIDDING BIG SCREEN --}}
     <div class="rounded-2xl border border-emerald-500/40 bg-zinc-900/90 p-6 shadow-xl">
         <div class="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-4">
@@ -149,7 +251,6 @@
             <div x-show="errorMsg" x-cloak class="mt-4 rounded-xl border border-red-500/40 bg-red-950/60 p-3 text-xs text-red-200" x-text="errorMsg"></div>
 
             <form @submit.prevent="submitAuction" class="mt-5 space-y-4">
-                {{-- Switch Currency --}}
                 <div>
                     <label class="mb-1.5 block text-xs font-semibold text-zinc-400">Mata Uang Lelang</label>
                     <div class="grid grid-cols-2 gap-2.5">
@@ -166,7 +267,6 @@
                     </div>
                 </div>
 
-                {{-- Pilih Pemenang Lelang (Semua akun bisa ngebid) --}}
                 <div>
                     <label class="mb-1.5 block text-xs font-semibold text-zinc-400">Pemenang Lelang (Ketik 3 Digit NIM atau Nama Akun)</label>
                     <template x-if="winner">
@@ -219,7 +319,6 @@
                     </template>
                 </div>
 
-                {{-- Pilih dari Katalog atau Manual --}}
                 <div class="space-y-2">
                     <div class="flex items-center justify-between">
                         <label class="block text-xs font-semibold text-zinc-400">ID & Nama Item Lelang</label>
@@ -258,7 +357,6 @@
                     </div>
                 </div>
 
-                {{-- Harga Deal Akhir --}}
                 <div>
                     <label class="mb-1.5 block text-xs font-semibold text-zinc-400" x-text="currency === 'cash' ? 'Harga Deal Akhir (Rupiah / Rp)' : 'Harga Deal Akhir (Coins)'"></label>
                     <input
@@ -273,7 +371,6 @@
                     >
                 </div>
 
-                {{-- Preview Kalkulasi Real-Time --}}
                 <div x-show="winner || price > 0" x-cloak class="space-y-1.5 rounded-xl border border-zinc-800 bg-zinc-950/90 p-3.5 text-xs">
                     <div class="flex items-center justify-between text-zinc-400">
                         <span>Item Lelang</span>
@@ -367,16 +464,15 @@
         </div>
     </div>
 
-    {{-- BAGIAN 2: MANAJEMEN KATALOG ITEM LELANG (BUKA / SEMBUNYIKAN) --}}
+    {{-- BAGIAN 2: MANAJEMEN KATALOG ITEM LELANG --}}
     <div class="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-6">
         <div class="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-4">
             <div>
-                <h2 class="text-lg font-bold text-gold-400">Katalog Item Lelang (Reveal Control)</h2>
-                <p class="text-xs text-zinc-400">Setiap barang otomatis diberi ID unik (<strong class="font-mono text-zinc-200">BRG-01</strong>, dst.) dengan pilihan mata uang Poin atau Uang Asli (Rp).</p>
+                <h2 class="text-lg font-bold text-gold-400">Katalog Item Lelang (Reveal & 3D Asset Control)</h2>
+                <p class="text-xs text-zinc-400">URL Gambar mendukung file <strong class="font-mono text-emerald-300">.glb / .gltf</strong> (Model 3D Interaktif) maupun gambar biasa (<strong class="font-mono text-zinc-200">.jpg / .png</strong>).</p>
             </div>
         </div>
 
-        {{-- Form Tambah Item Katalog --}}
         <form method="POST" action="{{ route('admin.auction.catalog.store') }}" class="mt-5 grid gap-3 rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 sm:grid-cols-2 lg:grid-cols-5">
             @csrf
             <div>
@@ -400,8 +496,8 @@
             </div>
             <div class="flex items-end gap-2">
                 <div class="flex-1">
-                    <label class="mb-1 block text-xs text-zinc-400">URL Gambar</label>
-                    <input type="text" name="image_url" placeholder="https://..." class="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-white">
+                    <label class="mb-1 block text-xs text-zinc-400">URL Gambar / Model 3D (.glb)</label>
+                    <input type="text" name="image_url" placeholder="https://.../model.glb" class="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-white">
                 </div>
                 <button type="submit" class="rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-zinc-950 hover:bg-emerald-400">
                     + Tambah
@@ -409,7 +505,6 @@
             </div>
         </form>
 
-        {{-- Daftar Item Katalog --}}
         <template x-if="catalog.length === 0">
             <div class="py-10 text-center text-xs text-zinc-500">
                 Belum ada item di katalog lelang. Tambahkan item baru menggunakan form di atas.
@@ -449,8 +544,13 @@
                             </form>
                         </div>
 
-                        <template x-if="c.image_url">
+                        <template x-if="c.image_url && !/\.(glb|gltf)(\?|$)/i.test(c.image_url)">
                             <img :src="c.image_url" :alt="c.name" class="mt-3 h-32 w-full rounded-xl bg-zinc-900 object-cover">
+                        </template>
+                        <template x-if="c.image_url && /\.(glb|gltf)(\?|$)/i.test(c.image_url)">
+                            <div class="mt-3 flex h-32 w-full items-center justify-center rounded-xl border border-gold-500/30 bg-zinc-900 text-xs font-bold text-gold-400">
+                                🧊 3D Model (.GLB) Terlampir
+                            </div>
                         </template>
 
                         <div class="mt-3 text-base font-bold text-white" x-text="c.name"></div>
@@ -524,7 +624,6 @@ function auctionDesk(cfg) {
         errorMsg: '',
         idemKey: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
 
-        // Live Bidding State
         live: cfg.live || { active: false },
         liveForm: {
             code: cfg.live?.code || '',
@@ -619,7 +718,6 @@ function auctionDesk(cfg) {
                     group_name: '',
                     balance: 999999999
                 };
-                // Ambil saldo real akun pemenang
                 fetch(`${cfg.searchUrl}?q=${encodeURIComponent(this.liveForm.bidder_nim)}`, { headers: { 'Accept': 'application/json' } })
                     .then(r => r.json())
                     .then(d => {
@@ -656,7 +754,6 @@ function auctionDesk(cfg) {
             if (!query) { this.results = []; return; }
             this.searching = true;
             try {
-                // Tanpa checked_in=1 agar siapa pun pemilik akun bisa ngebid
                 const res = await fetch(`${cfg.searchUrl}?q=${encodeURIComponent(query)}`, {
                     headers: { 'Accept': 'application/json' }
                 });

@@ -9,6 +9,7 @@ use App\Services\ParticipantImportParser;
 use App\Services\ParticipantSearch;
 use App\Services\PreEventScoreService;
 use App\Services\TableDownload;
+use App\Services\TableSeatingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -36,8 +37,6 @@ class PreEventScoreController extends Controller
     {
     }
 
-    // ================================================================ Daftar peserta & skor
-
     public function index(Request $request): View
     {
         $q      = trim((string) $request->query('q', ''));
@@ -63,16 +62,23 @@ class PreEventScoreController extends Controller
             ->paginate(100)
             ->withQueryString();
 
+        $allParticipants = User::participants()
+            ->orderBy('group_name')
+            ->orderBy('nim_code')
+            ->get(['nim_code', 'name', 'group_name', 'jabatan', 'is_checked_in']);
+
         return view('admin.pre-event.index', [
-            'participants' => $participants,
-            'groupSummary' => $this->scores->groupSummary(),
-            'formula'      => Setting::formula(),
-            'groups'       => User::participants()->whereNotNull('group_name')->distinct()->orderBy('group_name')->pluck('group_name'),
-            'stats'        => [
+            'participants'              => $participants,
+            'groupSummary'              => $this->scores->groupSummary(),
+            'formula'                   => Setting::formula(),
+            'groups'                    => User::participants()->whereNotNull('group_name')->distinct()->orderBy('group_name')->pluck('group_name'),
+            'stats'                     => [
                 'total'      => User::participants()->count(),
                 'checked_in' => User::participants()->checkedIn()->count(),
             ],
-            'filters'      => ['q' => $q, 'group' => $group, 'status' => $status],
+            'filters'                   => ['q' => $q, 'group' => $group, 'status' => $status],
+            'seating'                   => TableSeatingService::getSeating(),
+            'allParticipantsForSeating' => $allParticipants,
         ]);
     }
 
@@ -175,6 +181,22 @@ class PreEventScoreController extends Controller
         return $this->done($request, $message, ['formula' => $formula]);
     }
 
+    public function saveSeating(Request $request): JsonResponse|RedirectResponse
+    {
+        $data = $request->validate([
+            'tables'           => ['nullable', 'array'],
+            'tables.*.id'      => ['nullable', 'string', 'max:40'],
+            'tables.*.name'    => ['required', 'string', 'max:80'],
+            'tables.*.members' => ['nullable', 'array'],
+        ]);
+
+        TableSeatingService::saveSeating($data['tables'] ?? []);
+
+        return $this->done($request, 'Pengaturan Table Seating berhasil disimpan.', [
+            'seating' => TableSeatingService::getSeating(),
+        ]);
+    }
+
     public function destroy(Request $request, string $nimCode): JsonResponse|RedirectResponse
     {
         $code = User::normalizeCode($nimCode);
@@ -194,14 +216,11 @@ class PreEventScoreController extends Controller
         return $this->done($request, "Akun peserta {$name} ({$code}) beserta riwayat transaksinya berhasil dihapus.");
     }
 
-    // ================================================================ Import
-
     public function importForm(): View
     {
         return view('admin.import.index');
     }
 
-    /** Langkah 1: upload, parse, dry-run (di-rollback), simpan pratinjau, lalu redirect ke halaman pratinjau. */
     public function importUpload(Request $request, ParticipantImportParser $parser): RedirectResponse
     {
         $request->validate([
@@ -247,7 +266,6 @@ class PreEventScoreController extends Controller
         return redirect()->route('admin.import.preview', $token);
     }
 
-    /** Langkah 2: halaman pratinjau (aman di-refresh karena dibaca dari cache). */
     public function importPreview(Request $request, string $token): View|RedirectResponse
     {
         $payload = $this->previewPayload($request, $token);
@@ -265,7 +283,6 @@ class PreEventScoreController extends Controller
         ]);
     }
 
-    /** Langkah 3: konfirmasi. Import sungguhan memakai baris yang sama dengan pratinjau. */
     public function importCommit(Request $request): RedirectResponse
     {
         $request->validate(['token' => ['required', 'string', 'size:40']]);
@@ -300,8 +317,6 @@ class PreEventScoreController extends Controller
 
         return TableDownload::make($format, 'template-import-peserta', $header, $rows);
     }
-
-    // ================================================================ Internal
 
     private function previewPayload(Request $request, string $token): ?array
     {

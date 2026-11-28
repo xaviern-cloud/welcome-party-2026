@@ -9,14 +9,15 @@ use App\Models\User;
 use App\Services\BigScreenService;
 use App\Services\ParticipantSearch;
 use App\Services\TableDownload;
+use App\Services\TableSeatingService;
 use App\Services\TransactionPresenter;
 use App\Services\TransferService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
-use Illuminate\Database\Eloquent\Builder;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
@@ -27,8 +28,6 @@ class AdminControlController extends Controller
         private readonly BigScreenService $bigScreen,
     ) {
     }
-
-    // ================================================================ Dashboard
 
     public function dashboard(): View
     {
@@ -66,16 +65,12 @@ class AdminControlController extends Controller
         ]);
     }
 
-    // ================================================================ Freeze, perangkat, pencarian
-
-    /** Sakelar eksplisit ON/OFF (bukan toggle) agar klik ganda tidak membalik status. */
     public function freeze(Request $request): JsonResponse|RedirectResponse
     {
         $request->validate(['frozen' => ['required', 'boolean']]);
         $frozen = $request->boolean('frozen');
 
         DB::transaction(function () use ($frozen) {
-            // Menunggu transfer yang sedang berjalan (shared lock) selesai; setelah ini transfer baru ditolak
             Setting::query()->whereKey(Setting::TRANSACTIONS_FROZEN)->lockForUpdate()->first();
             Setting::putValue(Setting::TRANSACTIONS_FROZEN, $frozen);
         });
@@ -106,7 +101,6 @@ class AdminControlController extends Controller
         return $this->done($request, "Sesi perangkat {$user->name} ({$user->nim_code}) direset. Peserta dapat login dari perangkat baru.");
     }
 
-    /** Pencarian peserta untuk form lelang (admin boleh melihat saldo). */
     public function searchParticipants(Request $request): JsonResponse
     {
         $results = ParticipantSearch::find(
@@ -127,7 +121,34 @@ class AdminControlController extends Controller
         ]);
     }
 
-    // ================================================================ Lelang
+    // ================================================================ Sesi Juru Bicara Meja
+
+    public function controlTableSession(Request $request): JsonResponse|RedirectResponse
+    {
+        $data = $request->validate([
+            'action' => ['required', 'in:start,close,reopen,reset'],
+        ]);
+
+        TableSeatingService::controlSession($data['action']);
+
+        $messages = [
+            'start'  => 'Sesi Voting & Transfer Juru Bicara Meja DIBUKA untuk seluruh peserta!',
+            'close'  => 'Sesi Juru Bicara DITUTUP. Peserta yang belum mentransfer saldo otomatis dikunci dari Katalog Lelang.',
+            'reopen' => 'Sesi Juru Bicara DIBUKA KEMBALI.',
+            'reset'  => 'Data voting & status transfer sesi meja direset.',
+        ];
+
+        return $this->done($request, $messages[$data['action']], [
+            'overview' => TableSeatingService::adminOverview(),
+        ]);
+    }
+
+    public function tableSessionStatus(): JsonResponse
+    {
+        return response()
+            ->json(TableSeatingService::adminOverview())
+            ->header('Cache-Control', 'no-store');
+    }
 
     // ================================================================ Lelang
 
@@ -151,10 +172,11 @@ class AdminControlController extends Controller
             })->values();
 
         return view('admin.auction', [
-            'recent'      => $recent,
-            'frozen'      => Setting::isFrozen(),
-            'catalog'     => $this->readCatalog(),
-            'liveAuction' => self::getLiveAuctionState(),
+            'recent'        => $recent,
+            'frozen'        => Setting::isFrozen(),
+            'catalog'       => $this->readCatalog(),
+            'liveAuction'   => self::getLiveAuctionState(),
+            'tableOverview' => TableSeatingService::adminOverview(),
         ]);
     }
 
@@ -211,7 +233,6 @@ class AdminControlController extends Controller
 
         $tx->loadMissing('user:nim_code,name');
 
-        // Tandai barang di katalog sebagai TERJUAL
         if ($itemCode !== '') {
             $catalog = $this->readCatalog();
             $updated = false;
@@ -233,7 +254,6 @@ class AdminControlController extends Controller
             }
         }
 
-        // Jika item yang baru terjual sedang tampil di Live Big Screen Lelang, tandai statusnya DEAL / TERJUAL
         $live = self::getLiveAuctionState();
         if (($live['active'] ?? false) && strtoupper((string) ($live['code'] ?? '')) === $itemCode && $itemCode !== '') {
             $live['is_sold']     = true;
@@ -266,8 +286,6 @@ class AdminControlController extends Controller
             'sold_price'  => (int) $tx->amount,
         ], redirect()->route('admin.auction'));
     }
-
-    // ================================================================ Katalog Lelang (Buka / Sembunyikan)
 
     public function catalogStore(Request $request): JsonResponse|RedirectResponse
     {
@@ -354,7 +372,6 @@ class AdminControlController extends Controller
         return $this->done($request, 'Item katalog dihapus.', ['catalog' => $items]);
     }
 
-    /** @return array<int, array<string, mixed>> */
     public static function getCatalogItems(bool $onlyRevealed = false): array
     {
         $raw   = Setting::getValue('auction_catalog_items', '[]');
@@ -371,19 +388,15 @@ class AdminControlController extends Controller
         return array_values($items);
     }
 
-    /** @return array<int, array<string, mixed>> */
     private function readCatalog(): array
     {
         return self::getCatalogItems(false);
     }
 
-    /** @param array<int, array<string, mixed>> $items */
     private function writeCatalog(array $items): void
     {
         Setting::putValue('auction_catalog_items', json_encode(array_values($items), JSON_UNESCAPED_UNICODE));
     }
-
-    // ================================================================ Audit & ekspor
 
     public function transactions(Request $request): View
     {
@@ -406,7 +419,6 @@ class AdminControlController extends Controller
         ]);
     }
 
-    /** Ekspor rekap saldo + password peserta. Gunakan XLSX agar NIM dan password tidak dirusak Excel. */
     public function exportBalances(Request $request): StreamedResponse
     {
         $format = $request->query('format') === 'csv' ? 'csv' : 'xlsx';
@@ -467,8 +479,6 @@ class AdminControlController extends Controller
         return TableDownload::make('xlsx', 'audit-transaksi-'.now()->format('Ymd-His'), $header, $rows);
     }
 
-    // ================================================================ Kontrol Big Screen
-
     public function bigScreenState(): JsonResponse
     {
         return response()->json($this->bigScreen->adminState())->header('Cache-Control', 'no-store');
@@ -515,8 +525,6 @@ class AdminControlController extends Controller
 
         return $this->done($request, 'Layar leaderboard ditutup.', ['state' => $state]);
     }
-
-    // ================================================================ Reset Statistik Dashboard
 
     public function resetStats(Request $request): JsonResponse|RedirectResponse
     {
@@ -606,7 +614,6 @@ class AdminControlController extends Controller
         DB::transaction(function () {
             DB::table('transactions')->where('type', Transaction::TYPE_AUCTION)->delete();
 
-            // Kembalikan status TERJUAL di katalog menjadi tersedia kembali
             $catalog = $this->readCatalog();
             foreach ($catalog as &$c) {
                 $c['is_sold'] = false;
@@ -632,8 +639,6 @@ class AdminControlController extends Controller
             ->when($from !== '', fn ($qq) => $qq->where('created_at', '>=', \Illuminate\Support\Carbon::parse($from)))
             ->when($to !== '', fn ($qq) => $qq->where('created_at', '<=', \Illuminate\Support\Carbon::parse($to)));
     }
-
-    // ================================================================ Live Bidding Panggung & Big Screen Lelang
 
     public static function getLiveAuctionState(): array
     {
@@ -709,8 +714,6 @@ class AdminControlController extends Controller
             ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
 
-    // ================================================================ Kustomisasi Pembayaran Uang Asli (Rekening & QR)
-
     public static function getPaymentConfig(): array
     {
         $raw = Setting::getValue('auction_payment_config', '{}');
@@ -735,11 +738,11 @@ class AdminControlController extends Controller
     public function savePaymentSettings(Request $request): JsonResponse|RedirectResponse
     {
         $data = $request->validate([
-            'qris_image_url' => ['nullable', 'string', 'max:500'],
-            'qris_label'     => ['nullable', 'string', 'max:120'],
-            'whatsapp'       => ['nullable', 'string', 'max:30'],
-            'instructions'   => ['nullable', 'string', 'max:600'],
-            'accounts'       => ['nullable', 'array'],
+            'qris_image_url'      => ['nullable', 'string', 'max:500'],
+            'qris_label'          => ['nullable', 'string', 'max:120'],
+            'whatsapp'            => ['nullable', 'string', 'max:30'],
+            'instructions'        => ['nullable', 'string', 'max:600'],
+            'accounts'            => ['nullable', 'array'],
             'accounts.*.provider' => ['nullable', 'string', 'max:60'],
             'accounts.*.number'   => ['nullable', 'string', 'max:60'],
             'accounts.*.holder'   => ['nullable', 'string', 'max:100'],

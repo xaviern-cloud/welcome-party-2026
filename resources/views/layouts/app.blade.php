@@ -95,6 +95,10 @@
             <a href="{{ route('admin.transactions') }}" class="whitespace-nowrap rounded-lg px-2.5 py-1 text-xs {{ request()->routeIs('admin.transactions') ? 'bg-gold-500/20 text-gold-400' : 'text-zinc-400' }}">Audit</a>
             <a href="{{ route('bigscreen') }}" target="_blank" class="whitespace-nowrap rounded-lg border border-gold-500/40 px-2.5 py-1 text-xs text-gold-400">Leaderboard</a>
             <a href="{{ route('bigscreen.auction') }}" target="_blank" class="whitespace-nowrap rounded-lg border border-emerald-500/40 px-2.5 py-1 text-xs text-emerald-300">Layar Lelang</a>
+            <a href="{{ route('admin.showcase-voting.index') }}"
+            class="rounded-xl px-3 py-1.5 text-xs font-semibold transition {{ request()->routeIs('admin.showcase-voting.*') ? 'bg-gold-500 text-zinc-950 font-bold' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white' }}">
+                Voting Show
+            </a>
         </div>
         @endif
     </nav>
@@ -143,6 +147,11 @@
             <a href="{{ route('participant.catalog') }}" class="flex flex-col items-center justify-center py-3 text-xs font-medium {{ request()->routeIs('participant.catalog') ? 'text-gold-400' : 'text-zinc-400 hover:text-white' }}">
                 <svg class="mb-1 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
                 Katalog
+            </a>
+
+            <a href="{{ route('participant.voting') }}"
+            class="rounded-xl px-3 py-1.5 text-xs font-semibold transition {{ request()->routeIs('participant.voting*') ? 'bg-gold-500 text-zinc-950 font-bold' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white' }}">
+                Voting
             </a>
         </div>
     </div>

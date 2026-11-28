@@ -10,21 +10,13 @@ use Illuminate\Support\Facades\DB;
 
 class TransferService
 {
-    /**
-     * Transfer antar peserta (gratis, lintas kelompok).
-     *
-     * Aman dari race condition:
-     *  - kedua baris user dikunci sekaligus dengan urutan nim_code (tanpa deadlock A<->B)
-     *  - flag Freeze dibaca dengan shared lock: transfer boleh paralel, tetapi saat Admin menekan
-     *    Freeze, transfer berjalan selesai dulu dan transfer berikutnya langsung ditolak
-     *  - idempotency key mencegah transaksi ganda akibat double-tap / retry jaringan
-     */
     public function transfer(
         string $senderCode,
         string $receiverCode,
         int $amount,
         ?string $idempotencyKey = null,
-        ?string $note = null
+        ?string $note = null,
+        bool $bypassFreeze = false
     ): Transaction {
         $senderCode   = User::normalizeCode($senderCode);
         $receiverCode = User::normalizeCode($receiverCode);
@@ -39,7 +31,7 @@ class TransferService
             throw new BusinessRuleException('Tidak dapat melakukan transfer ke diri sendiri.');
         }
 
-        return DB::transaction(function () use ($senderCode, $receiverCode, $amount, $key, $note) {
+        return DB::transaction(function () use ($senderCode, $receiverCode, $amount, $key, $note, $bypassFreeze) {
             $users = User::query()
                 ->whereIn('nim_code', [$senderCode, $receiverCode])
                 ->orderBy('nim_code')
@@ -52,7 +44,6 @@ class TransferService
             /** @var User|null $receiver */
             $receiver = $users->get($receiverCode);
 
-            // Request ulang dengan key yang sama: kembalikan hasil sebelumnya, jangan proses lagi
             if ($key && ($existing = Transaction::query()->where('idempotency_key', $key)->first())) {
                 if ($existing->sender_nim_code !== $senderCode) {
                     throw new BusinessRuleException('Kunci transaksi tidak valid.', 409);
@@ -63,7 +54,7 @@ class TransferService
 
             $freeze = Setting::query()->whereKey(Setting::TRANSACTIONS_FROZEN)->sharedLock()->first();
 
-            if ($freeze && $freeze->value === '1') {
+            if (! $bypassFreeze && $freeze && $freeze->value === '1') {
                 throw new BusinessRuleException('Transaksi sedang dibekukan selama sesi lelang.', 423);
             }
 
@@ -102,10 +93,6 @@ class TransferService
         }, 3);
     }
 
-    /**
-     * Potong saldo pemenang lelang (lelang offline oleh MC).
-     * Sengaja TIDAK diblokir oleh mode Freeze, karena freeze justru aktif selama sesi lelang.
-     */
     public function deductForAuction(
         string $winnerCode,
         int $price,

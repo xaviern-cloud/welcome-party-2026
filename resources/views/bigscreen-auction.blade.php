@@ -6,6 +6,7 @@
     <title>Live Auction — Welcome Party 2026</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800;900&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
     <style>
         [x-cloak] { display: none !important; }
@@ -79,19 +80,90 @@
         {{-- Active Bidding Stage --}}
         <template x-if="live && live.active">
             <main class="my-auto grid items-center gap-10 py-6 lg:grid-cols-12">
-                {{-- Kiri: Foto Item --}}
+                {{-- Kiri: Interactive 3D Product Viewer (Auto-Rotate + Mouse Drag 360°) --}}
                 <div class="lg:col-span-5">
-                    <div class="relative overflow-hidden rounded-3xl border-2 bg-zinc-900/90 shadow-2xl"
-                         :class="live.is_sold ? 'border-red-500/70' : (live.currency === 'cash' ? 'border-emerald-400/60' : 'border-amber-400/60')">
-                        <template x-if="live.image_url">
-                            <img :src="live.image_url" :alt="live.name" class="aspect-square w-full object-cover">
+                    <div
+                        x-data="{
+                            rotY: 0,
+                            rotX: 0,
+                            dragging: false,
+                            lastX: 0,
+                            lastY: 0,
+                            isGlb(url) { return /\.(glb|gltf)(\?|$)/i.test(url || ''); },
+                            initSpin() {
+                                setInterval(() => {
+                                    if (!this.dragging) this.rotY = (this.rotY + 0.6) % 360;
+                                }, 16);
+                            },
+                            startDrag(e) {
+                                this.dragging = true;
+                                const pt = e.touches ? e.touches[0] : e;
+                                this.lastX = pt.clientX;
+                                this.lastY = pt.clientY;
+                            },
+                            onDrag(e) {
+                                if (!this.dragging) return;
+                                const pt = e.touches ? e.touches[0] : e;
+                                this.rotY += (pt.clientX - this.lastX) * 0.7;
+                                this.rotX = Math.max(-25, Math.min(25, this.rotX - (pt.clientY - this.lastY) * 0.4));
+                                this.lastX = pt.clientX;
+                                this.lastY = pt.clientY;
+                            },
+                            endDrag() { this.dragging = false; }
+                        }"
+                        x-init="initSpin()"
+                        class="relative overflow-hidden rounded-3xl border-2 bg-zinc-900/90 shadow-2xl"
+                        :class="live.is_sold ? 'border-red-500/70' : (live.currency === 'cash' ? 'border-emerald-400/60' : 'border-amber-400/60')"
+                    >
+                        {{-- Model 3D (.glb / .gltf) --}}
+                        <template x-if="live.image_url && isGlb(live.image_url)">
+                            <div class="aspect-square w-full bg-gradient-to-b from-zinc-800 via-zinc-950 to-black">
+                                <model-viewer
+                                    :src="live.image_url"
+                                    :alt="live.name"
+                                    auto-rotate
+                                    auto-rotate-delay="0"
+                                    rotation-per-second="35deg"
+                                    camera-controls
+                                    shadow-intensity="1.2"
+                                    environment-image="neutral"
+                                    style="width: 100%; height: 100%;"
+                                ></model-viewer>
+                            </div>
                         </template>
+
+                        {{-- Gambar 2D (.jpg / .png) dalam Mode 3D Spin Interaktif --}}
+                        <template x-if="live.image_url && !isGlb(live.image_url)">
+                            <div
+                                @mousedown="startDrag($event)"
+                                @mousemove="onDrag($event)"
+                                @mouseup="endDrag()"
+                                @mouseleave="endDrag()"
+                                @touchstart.passive="startDrag($event)"
+                                @touchmove.passive="onDrag($event)"
+                                @touchend="endDrag()"
+                                style="perspective: 1100px;"
+                                class="flex aspect-square w-full cursor-grab items-center justify-center bg-gradient-to-b from-zinc-900 via-zinc-950 to-black p-6 select-none active:cursor-grabbing"
+                            >
+                                <div
+                                    :style="`transform: rotateX(${rotX}deg) rotateY(${rotY}deg); transform-style: preserve-3d;`"
+                                    class="relative h-4/5 w-4/5 rounded-2xl border-2 border-amber-400/40 bg-zinc-900 shadow-[0_20px_60px_rgba(245,158,11,0.28)]"
+                                >
+                                    <img :src="live.image_url" :alt="live.name" draggable="false" class="h-full w-full rounded-2xl object-cover">
+                                </div>
+                            </div>
+                        </template>
+
                         <template x-if="!live.image_url">
                             <div class="flex aspect-square w-full flex-col items-center justify-center bg-zinc-950 text-zinc-600">
                                 <span class="font-display text-6xl font-black text-amber-400/40" x-text="live.code || 'ITEM'"></span>
                                 <span class="mt-2 text-xs uppercase tracking-widest">Exclusive Auction Item</span>
                             </div>
                         </template>
+
+                        <div x-show="live.image_url && !live.is_sold" class="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-zinc-700/80 bg-zinc-950/80 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-300">
+                            🔄 360° 3D View • Drag untuk memutar
+                        </div>
 
                         {{-- Stamp TERJUAL / DEAL --}}
                         <div x-show="live.is_sold" x-cloak class="absolute inset-0 flex items-center justify-center bg-black/70 backdrop-blur-xs">

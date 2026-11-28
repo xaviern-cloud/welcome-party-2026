@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\BusinessRuleException;
 use App\Models\Setting;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\ParticipantSearch;
+use App\Services\TableSeatingService;
 use App\Services\TransactionPresenter;
 use App\Services\TransferService;
 use Illuminate\Http\JsonResponse;
@@ -19,7 +21,6 @@ class ParticipantTransferController extends Controller
     {
     }
 
-    /** Dashboard pribadi: saldo, rincian modal awal, QR, riwayat. Peserta hanya melihat dirinya sendiri. */
     public function dashboard(Request $request): View
     {
         /** @var User $user */
@@ -35,13 +36,13 @@ class ParticipantTransferController extends Controller
                 'total'     => $user->total_mata_uang_final,
             ],
             'frozen'       => Setting::isFrozen(),
-            'transferUrl'  => route('transfer.create', ['to' => $user->nim_code]), // isi QR Code
+            'transferUrl'  => route('transfer.create', ['to' => $user->nim_code]),
             'transactions' => $this->history($user->nim_code),
+            'tableState'   => TableSeatingService::participantTableState($user),
             'stateUrl'     => route('participant.state'),
         ]);
     }
 
-    /** Dipolling dashboard peserta untuk saldo & riwayat real-time. */
     public function state(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -50,13 +51,13 @@ class ParticipantTransferController extends Controller
             'balance'        => $user->balance,
             'frozen'         => Setting::isFrozen(),
             'transactions'   => $this->history($user->nim_code),
+            'table_state'    => TableSeatingService::participantTableState($user),
             'catalog'        => AdminControlController::getCatalogItems(true),
             'live_auction'   => AdminControlController::getLiveAuctionState(),
             'payment_config' => AdminControlController::getPaymentConfig(),
         ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
 
-    /** Halaman transfer. /transfer?to=056 (hasil scan QR) langsung memilih penerima. */
     public function create(Request $request): View
     {
         /** @var User $user */
@@ -96,7 +97,6 @@ class ParticipantTransferController extends Controller
         ]);
     }
 
-    /** Pencarian penerima: ketik 3 digit NIM (mis. 056) atau nama. Tidak menampilkan saldo siapa pun. */
     public function lookup(Request $request): JsonResponse
     {
         $results = ParticipantSearch::find(
@@ -163,11 +163,72 @@ class ParticipantTransferController extends Controller
             'items'         => AdminControlController::getCatalogItems(true),
             'liveAuction'   => AdminControlController::getLiveAuctionState(),
             'paymentConfig' => AdminControlController::getPaymentConfig(),
+            'tableState'    => TableSeatingService::participantTableState($request->user()),
             'myNim'         => $request->user()->nim_code,
             'stateUrl'      => route('participant.state'),
         ]);
     }
-    /** @return array<int, array<string, mixed>> */
+
+    public function voteSpokesperson(Request $request): JsonResponse|RedirectResponse
+    {
+        $data = $request->validate([
+            'candidate_nim' => ['required', 'string', 'max:10'],
+        ]);
+
+        $user = $request->user();
+        TableSeatingService::castVote($user->nim_code, $data['candidate_nim']);
+
+        return $this->done($request, 'Pilihan Juru Bicara Meja berhasil disimpan.', [
+            'table_state' => TableSeatingService::participantTableState($user->fresh()),
+        ]);
+    }
+
+    public function transferToSpokesperson(Request $request): JsonResponse|RedirectResponse
+    {
+        /** @var User $user */
+        $user  = $request->user();
+        $state = TableSeatingService::participantTableState($user);
+
+        if (($state['session_status'] ?? 'idle') !== 'open') {
+            throw new BusinessRuleException('Sesi transfer Juru Bicara Meja belum dibuka atau sudah ditutup panitia.');
+        }
+
+        if (! ($state['voting_complete'] ?? false) || empty($state['spokesperson_nim'])) {
+            throw new BusinessRuleException('Voting Juru Bicara di meja Anda belum selesai.');
+        }
+
+        if ($state['i_am_spokesperson'] ?? false) {
+            throw new BusinessRuleException('Anda adalah Juru Bicara terpilih di meja ini.');
+        }
+
+        $amount = (int) $user->balance;
+        if ($amount <= 0) {
+            TableSeatingService::markTransferred($user->nim_code);
+
+            return $this->done($request, 'Saldo Anda sudah 0 Coins dan tercatat selesai.', [
+                'balance'     => 0,
+                'table_state' => TableSeatingService::participantTableState($user->fresh()),
+            ]);
+        }
+
+        $tx = $this->transfers->transfer(
+            $user->nim_code,
+            $state['spokesperson_nim'],
+            $amount,
+            'table-pool-'.$user->nim_code.'-'.($state['table_id'] ?? 'tbl'),
+            'Pooling Saldo Meja ke Juru Bicara ('.$state['table_name'].')',
+            true
+        );
+
+        TableSeatingService::markTransferred($user->nim_code);
+        $freshUser = $user->fresh();
+
+        return $this->done($request, 'Seluruh saldo ('.$this->formatNumber($tx->amount).' Coins) berhasil ditransfer ke Juru Bicara Meja!', [
+            'balance'     => $freshUser->balance,
+            'table_state' => TableSeatingService::participantTableState($freshUser),
+        ]);
+    }
+
     private function history(string $nimCode): array
     {
         return Transaction::query()
