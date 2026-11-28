@@ -6,8 +6,8 @@ use App\Http\Controllers\BigScreenController;
 use App\Http\Controllers\CheckInController;
 use App\Http\Controllers\ParticipantTransferController;
 use App\Http\Controllers\PreEventScoreController;
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ShowcaseVotingController;
+use Illuminate\Support\Facades\Route;
 
 // ---------------------------------------------------------------- Publik
 Route::middleware('guest')->group(function () {
@@ -41,6 +41,7 @@ Route::middleware(['auth', 'checked.in', 'role:participant'])->group(function ()
     Route::post('/table-session/vote', [ParticipantTransferController::class, 'voteSpokesperson'])->name('participant.table.vote');
     Route::post('/table-session/transfer', [ParticipantTransferController::class, 'transferToSpokesperson'])->name('participant.table.transfer');
 
+    // Voting Perform & Fashion Show
     Route::get('/voting', [ShowcaseVotingController::class, 'participantIndex'])->name('participant.voting');
     Route::get('/voting/state', [ShowcaseVotingController::class, 'participantState'])->name('participant.voting.state');
     Route::post('/voting/cast', [ShowcaseVotingController::class, 'castVote'])->name('participant.voting.cast');
@@ -74,6 +75,16 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     // Kontrol Sesi Juru Bicara Meja & Finalisasi
     Route::post('/table-session/control', [AdminControlController::class, 'controlTableSession'])->name('table-session.control');
     Route::get('/table-session/status', [AdminControlController::class, 'tableSessionStatus'])->name('table-session.status');
+
+    // Manajemen Voting Perform & Fashion Show
+    Route::get('/showcase-voting', [ShowcaseVotingController::class, 'adminIndex'])->name('showcase-voting.index');
+    Route::get('/showcase-voting/status', [ShowcaseVotingController::class, 'adminStatus'])->name('showcase-voting.status');
+    Route::post('/showcase-voting/categories', [ShowcaseVotingController::class, 'storeCategory'])->name('showcase-voting.categories.store');
+    Route::post('/showcase-voting/nominees', [ShowcaseVotingController::class, 'storeNominee'])->name('showcase-voting.nominees.store');
+    Route::delete('/showcase-voting/nominees/{id}', [ShowcaseVotingController::class, 'destroyNominee'])->name('showcase-voting.nominees.destroy');
+    Route::post('/showcase-voting/control', [ShowcaseVotingController::class, 'control'])->name('showcase-voting.control');
+    Route::post('/showcase-voting/reset', [ShowcaseVotingController::class, 'resetVotes'])->name('showcase-voting.reset');
+    Route::get('/showcase-voting/export', [ShowcaseVotingController::class, 'exportExcel'])->name('showcase-voting.export');
 
     // Kontrol Big Screen / Leaderboard Reveal
     Route::get('/bigscreen/state', [AdminControlController::class, 'bigScreenState'])->name('bigscreen.state');
@@ -110,13 +121,4 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     Route::post('/auction/live', [AdminControlController::class, 'updateLiveAuction'])->name('auction.live');
     Route::get('/payment-settings', [AdminControlController::class, 'paymentSettings'])->name('payment.settings');
     Route::post('/payment-settings', [AdminControlController::class, 'savePaymentSettings'])->name('payment.settings.save');
-
-    Route::get('/showcase-voting', [ShowcaseVotingController::class, 'adminIndex'])->name('admin.showcase-voting.index');
-    Route::get('/showcase-voting/status', [ShowcaseVotingController::class, 'adminStatus'])->name('admin.showcase-voting.status');
-    Route::post('/showcase-voting/categories', [ShowcaseVotingController::class, 'storeCategory'])->name('admin.showcase-voting.categories.store');
-    Route::post('/showcase-voting/nominees', [ShowcaseVotingController::class, 'storeNominee'])->name('admin.showcase-voting.nominees.store');
-    Route::delete('/showcase-voting/nominees/{id}', [ShowcaseVotingController::class, 'destroyNominee'])->name('admin.showcase-voting.nominees.destroy');
-    Route::post('/showcase-voting/control', [ShowcaseVotingController::class, 'control'])->name('admin.showcase-voting.control');
-    Route::post('/showcase-voting/reset', [ShowcaseVotingController::class, 'resetVotes'])->name('admin.showcase-voting.reset');
-    Route::get('/showcase-voting/export', [ShowcaseVotingController::class, 'exportExcel'])->name('admin.showcase-voting.export');
 });
