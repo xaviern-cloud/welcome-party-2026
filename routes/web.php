@@ -110,4 +110,13 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     Route::post('/auction/live', [AdminControlController::class, 'updateLiveAuction'])->name('auction.live');
     Route::get('/payment-settings', [AdminControlController::class, 'paymentSettings'])->name('payment.settings');
     Route::post('/payment-settings', [AdminControlController::class, 'savePaymentSettings'])->name('payment.settings.save');
+
+    Route::get('/showcase-voting', [ShowcaseVotingController::class, 'adminIndex'])->name('admin.showcase-voting.index');
+    Route::get('/showcase-voting/status', [ShowcaseVotingController::class, 'adminStatus'])->name('admin.showcase-voting.status');
+    Route::post('/showcase-voting/categories', [ShowcaseVotingController::class, 'storeCategory'])->name('admin.showcase-voting.categories.store');
+    Route::post('/showcase-voting/nominees', [ShowcaseVotingController::class, 'storeNominee'])->name('admin.showcase-voting.nominees.store');
+    Route::delete('/showcase-voting/nominees/{id}', [ShowcaseVotingController::class, 'destroyNominee'])->name('admin.showcase-voting.nominees.destroy');
+    Route::post('/showcase-voting/control', [ShowcaseVotingController::class, 'control'])->name('admin.showcase-voting.control');
+    Route::post('/showcase-voting/reset', [ShowcaseVotingController::class, 'resetVotes'])->name('admin.showcase-voting.reset');
+    Route::get('/showcase-voting/export', [ShowcaseVotingController::class, 'exportExcel'])->name('admin.showcase-voting.export');
 });
