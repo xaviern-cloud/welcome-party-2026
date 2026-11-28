@@ -2,16 +2,14 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class ShowcaseVotingService
 {
-    private string $path;
-
-    public function __construct()
-    {
-        $this->path = storage_path('app/showcase_voting.json');
-    }
+    private string $settingKey = 'showcase_voting_state';
+    private string $fallbackPath = '/tmp/showcase_voting.json';
 
     private function defaultState(): array
     {
@@ -22,18 +20,36 @@ class ShowcaseVotingService
                 ['id' => 'perform', 'name' => 'Perform / Talent Show'],
                 ['id' => 'fashion_show', 'name' => 'Fashion Show'],
             ],
-            'nominees' => [], // ['id', 'category_id', 'name', 'performer_info', 'description', 'photo_url']
-            'votes' => [],    // ['perform' => ['092' => 'NOM-xxx'], 'fashion_show' => ['092' => 'NOM-yyy']]
+            'nominees' => [],
+            'votes' => [],
         ];
+    }
+
+    private function useDatabase(): bool
+    {
+        try {
+            return Schema::hasTable('settings');
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     public function getState(): array
     {
-        if (!file_exists($this->path)) {
+        if ($this->useDatabase()) {
+            $row = DB::table('settings')->where('key', $this->settingKey)->first();
+            $decoded = $row ? json_decode((string) $row->value, true) : null;
+
+            return is_array($decoded)
+                ? array_merge($this->defaultState(), $decoded)
+                : $this->defaultState();
+        }
+
+        if (!file_exists($this->fallbackPath)) {
             return $this->defaultState();
         }
-        $raw = @file_get_contents($this->path);
-        $decoded = json_decode((string) $raw, true);
+
+        $decoded = json_decode((string) @file_get_contents($this->fallbackPath), true);
 
         return is_array($decoded)
             ? array_merge($this->defaultState(), $decoded)
@@ -42,21 +58,42 @@ class ShowcaseVotingService
 
     private function mutate(callable $callback): array
     {
-        $dir = dirname($this->path);
-        if (!is_dir($dir)) {
-            @mkdir($dir, 0775, true);
+        if ($this->useDatabase()) {
+            return DB::transaction(function () use ($callback) {
+                $row = DB::table('settings')->where('key', $this->settingKey)->lockForUpdate()->first();
+                $state = $row ? json_decode((string) $row->value, true) : null;
+                $state = is_array($state)
+                    ? array_merge($this->defaultState(), $state)
+                    : $this->defaultState();
+
+                $result = $callback($state);
+                $encoded = json_encode($state, JSON_UNESCAPED_UNICODE);
+
+                if ($row) {
+                    DB::table('settings')->where('key', $this->settingKey)->update([
+                        'value' => $encoded,
+                        'updated_at' => now(),
+                    ]);
+                } else {
+                    DB::table('settings')->insert([
+                        'key' => $this->settingKey,
+                        'value' => $encoded,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+
+                return ['state' => $state, 'result' => $result];
+            });
         }
 
-        $fp = fopen($this->path, 'c+');
+        $fp = fopen($this->fallbackPath, 'c+');
         flock($fp, LOCK_EX);
-
         $raw = stream_get_contents($fp);
         $state = json_decode((string) $raw, true);
-        if (!is_array($state)) {
-            $state = $this->defaultState();
-        } else {
-            $state = array_merge($this->defaultState(), $state);
-        }
+        $state = is_array($state)
+            ? array_merge($this->defaultState(), $state)
+            : $this->defaultState();
 
         $result = $callback($state);
 
@@ -104,16 +141,15 @@ class ShowcaseVotingService
                 throw new \InvalidArgumentException('Kategori tidak valid.');
             }
 
-            // Di dalam ShowcaseVotingService::addNominee()
-                $nominee = [
-                    'id' => 'NOM-' . strtoupper(Str::random(6)),
-                    'category_id' => $catId,
-                    'name' => trim((string) $data['name']),
-                    'angkatan' => trim((string) ($data['angkatan'] ?? '')),
-                    'performer_info' => trim((string) ($data['performer_info'] ?? '')),
-                    'description' => trim((string) ($data['description'] ?? '')),
-                    'photo_url' => trim((string) ($data['photo_url'] ?? '')),
-                ];
+            $nominee = [
+                'id' => 'NOM-' . strtoupper(Str::random(6)),
+                'category_id' => $catId,
+                'name' => trim((string) $data['name']),
+                'angkatan' => trim((string) ($data['angkatan'] ?? '')),
+                'performer_info' => trim((string) ($data['performer_info'] ?? '')),
+                'description' => trim((string) ($data['description'] ?? '')),
+                'photo_url' => trim((string) ($data['photo_url'] ?? '')),
+            ];
 
             $state['nominees'][] = $nominee;
             return $nominee;
@@ -244,14 +280,14 @@ class ShowcaseVotingService
 
             $nominees = $nomineesQuery->map(function ($n) use ($revealed, $counts, $totalVotes) {
                 $item = [
-                        'id' => $n['id'],
-                        'category_id' => $n['category_id'],
-                        'name' => $n['name'],
-                        'angkatan' => $n['angkatan'] ?? '',
-                        'performer_info' => $n['performer_info'] ?? '',
-                        'description' => $n['description'] ?? '',
-                        'photo_url' => $n['photo_url'] ?? '',
-                    ];
+                    'id' => $n['id'],
+                    'category_id' => $n['category_id'],
+                    'name' => $n['name'],
+                    'angkatan' => $n['angkatan'] ?? '',
+                    'performer_info' => $n['performer_info'] ?? '',
+                    'description' => $n['description'] ?? '',
+                    'photo_url' => $n['photo_url'] ?? '',
+                ];
                 if ($revealed) {
                     $v = (int) ($counts[$n['id']] ?? 0);
                     $item['votes'] = $v;
